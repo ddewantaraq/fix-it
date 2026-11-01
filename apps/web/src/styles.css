@@ -1,0 +1,117 @@
+:root {
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  line-height: 1.45;
+  --bg: #f3efe6;
+  --ink: #1c1914;
+  --accent: #0f5c4c;
+  --warn: #8a3b12;
+  --card: #fffdf8;
+  --line: #d7d0c3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 10% 0%, #e7f2ee 0%, transparent 40%),
+    radial-gradient(circle at 90% 10%, #f7e7d6 0%, transparent 35%),
+    var(--bg);
+  color: var(--ink);
+}
+
+main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.75rem;
+}
+
+.sub {
+  margin: 0 0 1.25rem;
+  color: #5a5348;
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+button,
+label.file {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #3d4654;
+}
+
+label.file input {
+  display: none;
+}
+
+.hypo {
+  background: #f6f1e6;
+  border-left: 3px solid var(--warn);
+  padding: 0.5rem 0.75rem;
+  margin: 0.4rem 0;
+}
+
+.escalate {
+  border-color: var(--warn);
+  background: #fff4ec;
+}
+
+pre {
+  overflow: auto;
+  background: #1c1914;
+  color: #f3efe6;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.mask-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.err {
+  color: #9b1c1c;
+  white-space: pre-wrap;
+}
+
+img.preview {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
