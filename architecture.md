@@ -1,16 +1,20 @@
-# FixIt Vision — Architecture
+# Iklim PAL — Architecture
 
 Build contract for the Meta Global AI Developer Hackathon MVP.
 
 | Field | Value |
 | --- | --- |
-| Product | **FixIt Vision** — perception-grounded, rule-constrained troubleshooting agent |
+| Product | **Iklim PAL** — perception-grounded, pack-constrained local climate **action planner** for young people |
 | Theme | **Build for Your World** |
 | Track | **Indie** |
-| MVP device | Household fan — symptom: **won’t turn on** |
-| Stack | React + Vite · Node.js · Supabase · Meta Model API (Muse) |
+| MVP issue | Neighborhood **plastic / river litter** (Indonesia youth context) |
+| Stack | React + Vite · Node.js · Supabase · Meta Muse suite (Wonder, Spark, SAM, Image, Voice) |
 | Submission | Wed **Nov 4, 9:00 PM ET** |
-| Fine-tuning | **Out of scope** — domain knowledge lives in Device Pack + rules + prompts |
+| RAG | **Out of scope** — no vector DB, no climate-PDF corpus |
+| Fine-tuning | **Out of scope** — knowledge lives in Action Pack + prompts |
+| Deprecated | Prior household-fan / “FixIt Vision” product — **removed**; do not revive |
+
+Repo: [`ddewantaraq/iklim-pal`](https://github.com/ddewantaraq/iklim-pal). Product name, UI, packs, and prompts must say **Iklim PAL** only.
 
 ---
 
@@ -18,386 +22,346 @@ Build contract for the Meta Global AI Developer Hackathon MVP.
 
 ### Problem
 
-When a household device stops working, people do not know what to check first. Generic web advice ignores the exact device and visible condition. A photo alone is not a diagnosis. Unsafe guidance can push people into energized or internal repairs.
+Many young people know climate change is serious, but awareness is not the same as knowing **where to start**, what is realistic locally, or how to act with friends. Evidence:
+
+- **UNICEF–Gallup (55 countries):** 85% of youth 15–24 had heard of climate change; only ~50% correctly identified its definition — awareness ≠ understanding usable for action.  
+  https://www.unicef.org/eca/press-releases/only-half-young-people-able-identify-correct-definition-climate-change-unicef-gallup
+- **UNICEF Europe & Central Asia — From Awareness to Action:** only 19.2% felt education gave them green-economy skills; 47.7% said there were not enough opportunities to express views on climate action.  
+  https://www.unicef.org/eca/reports/awareness-action
+- **UNDP Cambodia youth study:** 55% did not know how to engage; barriers included unengaging information (48%) and unreliable sources (47%). Used here as **problem evidence only**, not as a product feature for policy lobbying.  
+  https://www.undp.org/sites/g/files/zskgke326/files/2025-02/undp-kh-report-on-youth-engagement-in-cambodia-ndc.pdf
+- **UNICEF Indonesia** prioritizes youth climate participation — opportunity is to make **local practice** easier, not to re-explain that climate change exists.  
+  https://www.unicef.org/indonesia/climate
 
 ### Users (MVP)
 
-- Households doing a safe first check
-- (Later) small repair businesses / maintenance — not required for demo
+- Young people (approx. 15–24) who care but lack a clear first step
+- Small friend groups organizing a short community cleanup or waste action
 
 ### Core value
 
-Combine **visual evidence + user-reported symptoms + approved safe checks** so the user understands what they can inspect externally, what remains uncertain, and when to call a technician.
+Turn a **local environmental concern** (photo + place + optional voice) into a **pack-approved, safety-bounded, measurable Action Plan** — individually or with friends — without becoming a climate tutor or political organizer.
 
 ### Hard boundaries
 
-- No guaranteed diagnosis or confirmed fault labels in the UI
-- No hazardous disassembly
-- No instructions to work on energized equipment
-- Model outputs are **hypotheses** gated by the Device Pack; the rules engine is the product authority
+- No guaranteed impact claims (“you will save X tons of CO₂”)
+- No medical, legal, or political campaigning advice
+- No parties, voting guidance, legislation lobbying, or protest organizing as product features
+- No free-form “explain climate science” Q&A mode
+- Model suggestions are constrained by the **Action Pack**; the rules/safety gate is authoritative
+- Escalate when DIY is unsafe (chemicals, medical waste, fast water, night roadside) → contact adult / local authority; stop
 
 ### Positioning line (judge-facing)
 
-> FixIt Vision is not an image classifier. It is a multi-turn agent that gathers SAM-grounded evidence, asks only approved questions, proposes only pack-approved safe checks, and emits an uncertainty-aware technician handoff — never a free-form “here’s what’s broken.”
+> Iklim PAL is not a climate chatbot and not an image captioner. It is a multi-model Muse agent that turns a local litter concern into a pack-approved, safety-bounded youth Action Plan — with SAM-grounded evidence, Spark tool loops, Wonder plan synthesis, and Muse Image share cards.
 
 ---
 
 ## 2. Anti-project escape
 
-Hackathon anti-projects include **Simple Image Analyzers**. A naive “upload photo → model names the fault” build fails the gate.
+Hackathon anti-projects that this idea can trip: **Basic RAG**, **simple AI-for-Education chatbots**, **anything political**, **simple image analyzers**.
 
-| Simple image analyzer (banned shape) | FixIt Vision (shipped shape) |
+| Banned shape | Iklim PAL shipped shape |
 | --- | --- |
-| One multimodal call returns a label | Multi-turn agent with tools + session state |
-| Free-form diagnosis text | Hypotheses only; never confirmed faults |
-| No domain constraints | Fan Device Pack: parts, checks, stop conditions |
-| Vision is the product | Vision is evidence; **rules + escalation** are the product |
-| No structured artifact | Exportable **Repair Brief** for a human technician |
+| Chatbot that explains climate science | Multi-turn **action agent**; success = **Action Plan**, not a lesson |
+| Basic RAG over IPCC / news PDFs | Versioned **Action Pack JSON** + Muse tools; optional Muse **search grounding** for practical how-tos only — **no vector store** |
+| Political advocacy / policy lobbying | **Community practice only**: cleanup, waste reduction, buddy coordination |
+| Upload photo → “this is pollution” | Photo is evidence; SAM segments; Spark asks/acts; Wonder emits plan |
 
-**Pass/fail requirements we must demonstrate in the demo video:**
-
-1. Meta Model API used for real work (SAM 3.1 + Muse Spark; optional Muse Image)
-2. At least two tool hops in one session (e.g. segment → ask → check → summarize)
-3. Safety stop / escalate when evidence is insufficient
-4. Explicit uncertainty language in the final summary
+**Pass/fail demo must show:** Meta Model API in real use; ≥2 tool hops; pack-validated actions only; escalate path; uncertainty language; no political CTA.
 
 ---
 
 ## 3. Winning criteria map (Indie)
 
-| Criterion | Weight | How FixIt proves it |
+| Criterion | Weight | How Iklim PAL proves it |
 | --- | --- | --- |
-| **Impact** | 30% | Everyday household pain; safer first checks; technician-ready brief |
-| **Meta AI tooling** | 25% | SAM masks + Spark agent loop + (P1) Muse Image “inspect here” overlay |
-| **Demo** | 25% | One staged fan scenario end-to-end + escalation case; crisp 3-min video |
-| **Technical depth** | 20% | Device Pack, evidence ledger, safety gate, structured state in Supabase |
+| **Impact** | 30% | Awareness→action gap (UNICEF/UNDP); Indonesia youth; concrete local plan |
+| **Meta AI tooling** | 25% | SAM + Spark + Wonder + Muse Image (+ Voice P1) in one session |
+| **Demo** | 25% | 3-min litter hero path + escalate case |
+| **Technical depth** | 20% | Action Pack, evidence ledger, safety gate, structured Action Plan |
 
-**Bonus targets (after P0 works):**
-
-- **Best Agentic Use-Case ($5K)** — tool-calling loop with durable session state
-- **Best Creative Build ($5K)** — Muse Image annotated inspection overlay from SAM masks
-
-Skip open-weight fine-tune / self-host unless the demo is already frozen.
+**Bonus plays:** Best Agentic Use-Case (tool loop); Best Creative Build (Muse Image share card). Open-weight fine-tune = skip unless demo frozen.
 
 ---
 
 ## 4. System architecture
 
 ```text
-┌─────────────────────┐     HTTPS      ┌──────────────────────┐
-│  React + Vite       │ ─────────────► │  Node.js API         │
-│  Capture / masks /  │                │  Agent orchestrator  │
-│  Q&A / summary UI   │ ◄───────────── │  Safety rules gate   │
-└─────────────────────┘                │  Device Pack loader  │
-                                       └──────────┬───────────┘
-                              ┌───────────────────┼───────────────────┐
-                              ▼                   ▼                   ▼
-                        Supabase DB         Supabase Storage    Meta Model API
-                        sessions /          photos / masks /    sam-3.1
-                        evidence /          overlay images      muse-spark-1.3
-                        packs                                   muse-image-1.0
+┌──────────────────────┐    HTTPS     ┌───────────────────────────┐
+│  React + Vite        │ ───────────► │  Node.js API              │
+│  Photo / voice /     │              │  Spark tool orchestrator  │
+│  Q&A / Action Plan   │ ◄─────────── │  Wonder plan synthesizer  │
+│  Muse Image card UI  │              │  Safety / scope gate      │
+└──────────────────────┘              │  Action Pack loader       │
+                                      └─────────────┬─────────────┘
+                            ┌───────────────────────┼───────────────────────┐
+                            ▼                       ▼                       ▼
+                      Supabase DB            Supabase Storage         Meta Model API
+                      sessions /             photos / masks /         sam-3.1
+                      evidence /             share cards /            muse-spark-1.3
+                      action_packs /         voice clips              muse-wonder-1.0
+                      action_plans                                    muse-image-1.0
+                                                                      muse-voice-transcribe-1.0
 ```
 
-### Responsibilities
-
-| Layer | Owns |
-| --- | --- |
-| **Frontend** | Photo capture/upload, symptom form, mask overlay rendering, approved Q&A UI, safe-check confirmation, Repair Brief view |
-| **Node API** | Auth to Meta + Supabase service role, agent step loop, schema validation, safety gate, Device Pack enforcement |
-| **Supabase** | Session persistence, evidence ledger, image/mask storage, optional anon session tokens for demo |
-| **Meta Model API** | Perception (SAM), reasoning/planning (Spark), optional overlay generation (Image) |
-
-**Invariant:** the browser never holds `MODEL_API_KEY`. All Muse/SAM calls go through Node.
+**Invariant:** `MODEL_API_KEY` never ships to the browser. All Muse/SAM calls go through Node.
 
 ---
 
-## 5. Muse integration (inference only — no fine-tune)
+## 5. Muse integration (inference only — no fine-tune, no RAG)
 
 Base URL: `https://api.meta.ai/v1`  
 Auth: `Authorization: Bearer $MODEL_API_KEY`
 
-Domain knowledge is **not** trained into weights. It lives in:
+### 5.1 SAM 3.1 — `sam-3.1` (P0)
 
-1. Fan Device Pack JSON  
-2. System + tool prompts constrained to pack IDs  
-3. Few-shot staged fixtures for eval/demo  
-4. Evidence ledger linking every claim to a source  
+- Segment litter objects from Action Pack noun phrases (`plastic bottle`, `plastic bag`, `trash pile`, …).
+- Store masks; append evidence. UI shows overlays so judges see grounding.
 
-### 5.1 SAM 3.1 — `sam-3.1`
+### 5.2 Muse Spark — `muse-spark-1.3` (P0)
 
-- **Role:** Segment visible fan parts from short noun phrases (and optional point/box prompts later).
-- **Input:** User photo + phrases from Device Pack (`power plug`, `power switch`, `fan grille`, `fan blades`, …).
-- **Output:** Boxes + masks stored in Storage; mask metadata written to evidence ledger.
-- **UI:** Frontend composites translucent overlays so judges *see* grounding.
+- Fast multimodal **tool-loop planner**: choose `segment_parts` | `ask_question` | `propose_action` | `finalize_plan`.
+- Structured JSON only; IDs must exist in the Action Pack or Node rejects.
 
-### 5.2 Muse Spark — `muse-spark-1.3`
+### 5.3 Muse Wonder — `muse-wonder-1.0` (P0)
 
-- **Role:** Multimodal interpreter + agent planner.
-- **Inputs:** Photo (and/or cropped regions), current session state summary, Device Pack excerpt, tool schemas.
-- **Outputs:** Structured JSON only (Zod/JSON Schema validated server-side): next action, hypothesis candidates with confidence bands, uncertainty notes.
-- **Constraints:** May only reference pack part IDs, question IDs, and check IDs. May not invent repair steps outside the pack. May not assert a confirmed root cause.
+- Long-horizon **Action Plan synthesis** from the evidence ledger + selected pack actions.
+- May use reasoning effort `high`/`max` on finalize only (credit-aware).
+- Still may not invent action IDs outside the pack; Node validates before persist.
 
-Recommended reasoning effort for planner steps: `high` when choosing escalate vs continue; `minimal`/`low` for cheap classification helpers if split into subcalls.
+### 5.4 Muse Image — `muse-image-1.0` (P0)
 
-### 5.3 Muse Image — `muse-image-1.0` (P1, non-blocking)
+- Generate a **share / invite friends** card from plan summary (+ optional SAM crop reference).
+- Optional “cleanup zone” annotated still. Fallback: canvas overlay from masks if Image fails.
 
-- **Role:** Generate an annotated “inspect here” still for the Repair Brief, guided by SAM mask regions + short instruction.
-- **Fallback:** If Image fails or credits are low, render canvas overlays client-side from SAM masks (same UX contract).
+### 5.5 Muse Voice Transcribe — `muse-voice-transcribe-1.0` (P1)
 
-### 5.4 Explicit non-goals for models
+- Youth records a short concern clip → transcript becomes session `concernText`.
+- Same downstream path as typed concern. Stub API on D2; ship UI if D3 allows.
 
-- No fine-tuning Muse Spark / Wonder / open-weight variants for fan repair
-- No free-form “how to fix your motor” generation
-- No medical, electrical internals, or energized procedures
+### 5.6 Explicit non-goals for models
+
+- No RAG corpus, embeddings store, or “chat with climate docs”
+- No fine-tuning Wonder/Spark/open-weight for climate
+- No political content generation as a feature
+- Muse Code is for builders only (not runtime)
+
+### 5.7 Optional Muse search grounding
+
+Allowed only for **practical, non-political** how-tos (e.g. glove/bag disposal tips), gated and summarized into plan notes — never as a free browsing education bot.
 
 ---
 
 ## 6. Domain model
 
-### DevicePack
-
-Versioned JSON, checked into the repo (also mirrored in Supabase for runtime load).
+### ActionPack
 
 ```ts
-type DevicePack = {
-  id: "household_fan_v1";
+type ActionPack = {
+  id: "plastic_litter_id_v1";
   displayName: string;
-  supportedSymptoms: Array<"wont_turn_on">;
-  parts: Array<{
-    id: string;                 // e.g. "plug"
-    samPhrase: string;          // e.g. "power plug"
-    requiredForDemo?: boolean;
-  }>;
+  localeHint: "id-youth";
+  supportedConcerns: Array<"plastic_litter" | "river_litter" | "drain_litter">;
+  parts: Array<{ id: string; samPhrase: string; requiredForDemo?: boolean }>;
   questions: Array<{
     id: string;
     text: string;
     expects: "yes_no" | "enum" | "short_text";
     options?: string[];
-    mapsToEvidence: string;     // evidence key
+    mapsToEvidence: string;
   }>;
-  safeChecks: Array<{
+  actions: Array<{
     id: string;
     title: string;
-    instructions: string[];     // external, unplugged-only language
-    requiresUnplugged: true;
-    forbiddenIf?: string[];     // gate tags that block this check
+    steps: string[];
+    materials: string[];
+    durationMinutes: number;
+    needsFriends?: boolean;
+    forbiddenIf?: string[]; // gate tags
   }>;
   stopConditions: Array<{
     id: string;
-    when: string;               // human + machine readable rule id
+    when: string;
     escalate: boolean;
     userMessage: string;
   }>;
   escalationDefaults: {
     message: string;
-    nextStep: "contact_technician" | "stop";
+    nextStep: "contact_adult_or_authority" | "stop";
   };
 };
 ```
 
-### Session
-
-Durable troubleshooting run.
+### Session / Evidence / ActionPlan
 
 ```ts
 type Session = {
   id: string;
-  devicePackId: "household_fan_v1";
-  symptom: "wont_turn_on";
-  status: "collecting" | "inspecting" | "questioning" | "checking" | "summarizing" | "done" | "escalated";
+  actionPackId: "plastic_litter_id_v1";
+  concernText: string;
+  city: string;
+  status:
+    | "collecting"
+    | "inspecting"
+    | "questioning"
+    | "planning"
+    | "summarizing"
+    | "done"
+    | "escalated";
   photoPath?: string;
+  voicePath?: string;
   createdAt: string;
   updatedAt: string;
 };
-```
 
-### EvidenceItem
-
-Append-only ledger. Every UI claim must cite one.
-
-```ts
 type EvidenceItem = {
   id: string;
   sessionId: string;
-  kind: "sam_mask" | "user_answer" | "safe_check_result" | "model_observation";
+  kind: "sam_mask" | "user_answer" | "action_accepted" | "model_observation" | "voice_transcript";
   partId?: string;
   questionId?: string;
-  checkId?: string;
-  payload: Record<string, unknown>; // mask urls, answer value, observation text
-  source: "sam-3.1" | "user" | "muse-spark-1.3" | "rules";
+  actionId?: string;
+  payload: Record<string, unknown>;
+  source:
+    | "sam-3.1"
+    | "user"
+    | "muse-spark-1.3"
+    | "muse-wonder-1.0"
+    | "muse-voice-transcribe-1.0"
+    | "rules";
   createdAt: string;
 };
-```
 
-### Hypothesis
-
-Never shown as confirmed.
-
-```ts
-type Hypothesis = {
-  id: string;
-  label: string;              // e.g. "switch may be off"
-  confidence: "low" | "medium" | "high";
-  supportingEvidenceIds: string[];
-  status: "candidate" | "weakened" | "ruled_out" | "unresolved";
-};
-```
-
-### SafeCheck / Escalation / RepairBrief
-
-```ts
-type SafeCheckResult = {
-  checkId: string;
-  outcome: "pass" | "fail" | "unclear" | "skipped";
-  notes?: string;
-};
-
-type Escalation = {
-  reasonId: string;
-  message: string;
-  triggeredByEvidenceIds: string[];
-};
-
-type RepairBrief = {
+type ActionPlan = {
   sessionId: string;
-  device: "household_fan";
-  symptom: string;
-  observations: string[];          // evidence-backed only
-  checksPerformed: SafeCheckResult[];
-  hypotheses: Hypothesis[];        // labeled as unconfirmed
+  goal: string;
+  steps: Array<{
+    order: number;
+    title: string;
+    detail: string;
+    owner: "solo" | "friends" | "adult_help";
+    timeboxMinutes: number;
+    packActionId?: string;
+  }>;
+  materials: string[];
+  safetyNotes: string[];
+  measureHow: string[]; // e.g. bags collected, before/after photos
   uncertainty: string[];
-  recommendation: "safe_home_followup" | "stop_and_escalate";
-  technicianNotes: string;         // structured handoff paragraph
-  overlayImagePath?: string;       // Muse Image or canvas fallback
+  recommendation: "proceed_with_plan" | "stop_and_escalate";
+  shareCardPath?: string;
 };
 ```
 
 ---
 
-## 7. Agent + rules engine
-
-### High-level loop
+## 7. Agent + safety / scope gate
 
 ```text
-capture photo + symptom
-  → create Session
-  → Muse Spark plans next tool (constrained)
-      ├─ segment_parts (SAM 3.1)
-      ├─ ask_question (pack question ids only)
-      ├─ propose_safe_check (pack check ids only)
-      └─ finalize_summary
-  → each tool result → EvidenceItem
-  → SafetyGate evaluates stop/escalate
-  → continue or emit RepairBrief
+photo + city + concern (+ optional voice transcript)
+  → Session
+  → Muse Spark plans next tool
+      ├─ segment_parts (SAM)
+      ├─ ask_question (pack IDs)
+      ├─ propose_action (pack IDs)
+      └─ finalize_plan (Wonder → ActionPlan → Muse Image card)
+  → Evidence ledger
+  → SafetyGate (stop / escalate / continue)
 ```
 
 ### Tools (server-implemented)
 
 | Tool | Effect |
 | --- | --- |
-| `segment_parts` | Calls SAM for one or more pack `samPhrase`s; stores masks; appends evidence |
-| `ask_question` | Returns next approved question; waits for user answer via API |
-| `propose_safe_check` | Returns pack check text only if SafetyGate allows |
-| `record_check_result` | Persists user-reported check outcome |
-| `finalize_summary` | Builds RepairBrief; optional Muse Image overlay |
+| `segment_parts` | SAM for pack phrases; store masks |
+| `ask_question` | Return next approved resource question |
+| `propose_action` | Return pack action if gate allows |
+| `record_answer` / accept action | Persist evidence |
+| `finalize_plan` | Wonder synthesizes ActionPlan; Muse Image share card |
+| `transcribe_concern` | Voice → text (P1) |
 
-Spark chooses tools; **Node validates** every call against the Device Pack before execution.
+### Safety / scope invariants
+
+1. Unknown pack IDs from models → validate → **retry Spark once** → if still invalid or no match → escalate with pack `stop_out_of_scope` (never invent free-form advice outside the pack).
+2. Wonder plan steps with unknown `packActionId` are stripped; if no steps remain → `stop_and_escalate`.
+3. Deny-list for political/lobby/protest CTAs and for unsafe DIY (enter floodwater, handle chemicals, medical waste).
+4. Near-water + no adult → force buddy/adult safety notes or escalate.
+5. Hypotheses about “why litter accumulates” stay uncertain; never claim scientific certainty.
+6. UI never presents a climate lecture as the primary screen — Action Plan is primary.
 
 ### State machine
 
 ```text
-collecting → inspecting → questioning ⇄ checking → summarizing → done
+collecting → inspecting → questioning ⇄ planning → summarizing → done
                  │              │
                  └──────────────┴──► escalated
 ```
 
-Transitions into `escalated` when any `stopConditions` fire (e.g. suspected internal electrical fault, damaged cord with exposed conductors language from user, no visible cause after required checks).
-
-### Safety gate invariants
-
-1. Every `propose_safe_check` requires `requiresUnplugged` acknowledgment in session evidence.
-2. No check text may include words/patterns from a deny list: open chassis, live wire, motor rewind, capacitor discharge DIY, etc. (maintain a server-side deny list).
-3. Spark structured output that references unknown IDs is rejected; agent is asked to retry or escalate.
-4. UI copy for hypotheses always prefixes with uncertainty framing (“possible,” “not confirmed”).
-5. If required demo parts cannot be segmented and user answers contradict each other → escalate, do not invent a cause.
-
-### Uncertainty labels (required in RepairBrief)
-
-- `insufficient_visual_evidence`
-- `conflicting_user_answers`
-- `no_pack_check_remaining`
-- `possible_internal_fault_out_of_scope`
-
 ---
 
-## 8. Fan Device Pack (MVP content)
+## 8. Action Pack MVP — `plastic_litter_id_v1`
 
-**Pack ID:** `household_fan_v1`  
-**Symptom:** `wont_turn_on`
-
-### Parts
+### Parts (SAM phrases)
 
 | Part ID | SAM phrase |
 | --- | --- |
-| `plug` | power plug |
-| `cord` | power cord |
-| `switch` | power switch |
-| `grille` | fan grille |
-| `blades` | fan blades |
-| `base` | fan base |
-| `obstruction` | dust or obstruction on fan |
+| `bottle` | plastic bottle |
+| `bag` | plastic bag |
+| `pile` | trash pile |
+| `bank_litter` | river bank litter |
+| `drain_clog` | litter at drain grate |
 
-### Staged demo scenarios (fixtures, not training data)
+### Resource questions (examples)
 
-| ID | Setup | Expected agent behavior |
-| --- | --- | --- |
-| `S1_unplugged` | Plug visibly out of outlet / not seated | Segment plug; ask/confirm power; safe check; summary without claiming motor failure |
-| `S2_switch_off` | Switch clearly in off position | Segment switch; ask switch position; propose verify switch; hypothesis “switch may be off” |
-| `S3_grille_blocked` | Visible dust/obstruction on grille | Segment grille/obstruction; safe external clear-obstruction check **only while unplugged** |
-| `S4_ambiguous` | Powered appearance, no visible issue | Complete required questions/checks → **escalate** with uncertainty |
+- City / neighborhood (short text)
+- Hours available this week (enum)
+- Solo vs friends
+- Gloves/bags available?
+- Near water yes/no
 
-### Safe checks (examples)
+### Approved actions (examples)
 
-- Confirm device is unplugged before any physical inspection
-- Visually inspect plug for cracks or burn marks (look only)
-- Verify switch position
-- With power disconnected, check whether grille has visible blockage
+- Photo-map litter hotspots (before shots)
+- 60–90 min buddy cleanup with gloves, closed shoes, daylight only
+- Separate recyclables vs residual where local rules allow
+- School/campus mini awareness card (non-political; invite cleanup)
+- Hand off toxic/unknown containers to adult/authority — do not open
 
-### Stop / escalate examples
+### Stop / escalate
 
-- User reports sparking, burning smell, or shock → immediate escalate
-- Damaged cord with exposed conductors suspected → escalate
-- After pack-complete path with no supporting evidence → escalate to technician
+- Chemical drums, needles/medical waste, strong chemical smell
+- Fast-moving flood water
+- Night / high-traffic roadside without adult
+- Insufficient visual evidence after required questions → escalate with uncertainty
 
 ---
 
 ## 9. API surface (Node)
 
-Minimal REST for the hackathon. All mutating routes validate body schemas.
-
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/sessions` | Create session (`devicePackId`, `symptom`) |
-| `POST` | `/sessions/:id/photo` | Upload photo → Storage; set status `inspecting` |
-| `POST` | `/sessions/:id/step` | Run one agent step (planner + optional tool) |
-| `POST` | `/sessions/:id/answers` | Submit answer to active question |
-| `POST` | `/sessions/:id/checks/:checkId` | Record safe-check outcome |
-| `POST` | `/sessions/:id/finalize` | Force summary if needed |
-| `GET` | `/sessions/:id` | Session + evidence + hypotheses + brief |
-| `GET` | `/packs/household_fan_v1` | Device Pack JSON |
+| `POST` | `/sessions` | Create session (`actionPackId`, `city`, `concernText`) |
+| `POST` | `/sessions/:id/photo` | Upload photo |
+| `POST` | `/sessions/:id/voice` | Upload audio → Voice Transcribe (P1) |
+| `POST` | `/sessions/:id/step` | Spark planner + optional tool |
+| `POST` | `/sessions/:id/answers` | Submit question answer |
+| `POST` | `/sessions/:id/actions/:actionId` | Accept/skip proposed action |
+| `POST` | `/sessions/:id/finalize` | Wonder plan + Image card |
+| `GET` | `/sessions/:id` | Session + evidence + plan |
+| `GET` | `/packs/plastic_litter_id_v1` | Action Pack JSON |
 
-**Agent step response shape:**
+**Agent step UI payload (frozen contract):**
 
 ```json
 {
   "sessionId": "...",
   "status": "questioning",
-  "assistantMessage": "I can see the switch region. Is the switch set to On?",
+  "assistantMessage": "I marked plastic bags along the bank. How many friends can join a 90-minute cleanup?",
   "ui": {
-    "masks": [{ "partId": "switch", "url": "..." }],
-    "question": { "id": "q_switch_position", "text": "..." },
-    "safeCheck": null,
-    "hypotheses": [{ "label": "switch may be off", "confidence": "medium" }]
+    "masks": [{ "partId": "bag", "url": "..." }],
+    "question": { "id": "q_friends", "text": "..." },
+    "proposedAction": null,
+    "plan": null
   },
   "escalated": false
 }
@@ -407,95 +371,97 @@ Minimal REST for the hackathon. All mutating routes validate body schemas.
 
 ## 10. Data (Supabase)
 
-### Tables (sketch)
+### Tables
 
-- `device_packs` — `id`, `version`, `json`, `updated_at`
-- `sessions` — `id`, `device_pack_id`, `symptom`, `status`, `photo_path`, `created_at`, `updated_at`
-- `evidence_items` — `id`, `session_id`, `kind`, `part_id`, `question_id`, `check_id`, `payload jsonb`, `source`, `created_at`
-- `hypotheses` — `id`, `session_id`, `label`, `confidence`, `status`, `supporting_evidence_ids uuid[]`
-- `repair_briefs` — `id`, `session_id`, `brief jsonb`, `overlay_path`, `created_at`
+- `action_packs` — `id`, `version`, `json`, `updated_at`
+- `sessions` — `id`, `action_pack_id`, `concern_text`, `city`, `status`, `photo_path`, `voice_path`, timestamps
+- `evidence_items` — append-only ledger
+- `action_plans` — `id`, `session_id`, `plan jsonb`, `share_card_path`, `created_at`
 
 ### Storage buckets
 
 - `session-photos`
 - `session-masks`
-- `session-overlays`
+- `session-share-cards`
+- `session-voice`
 
-### Access
-
-- Hackathon demo may use a single shared anon key with RLS limited to insert/select on own `session_id`, **or** issue short-lived session tokens from Node.
-- Service role used only on the server for Muse orchestration writes.
+Replace any prior `device_packs` / fan seeds. Apply via new migration in the code purge pass.
 
 ---
 
 ## 11. Frontend (React + Vite)
 
-### Screens (one composition flow)
+1. **Capture** — photo + city + concern (typed or voice)
+2. **Inspect** — SAM overlays
+3. **Guide** — pack questions + proposed actions
+4. **Plan** — Action Plan + safety + measure-how + escalate CTA
+5. **Share** — Muse Image card
 
-1. **Capture** — photo + symptom “won’t turn on”
-2. **Inspect** — SAM overlays on the fan image
-3. **Guide** — approved questions + safe checks
-4. **Brief** — Repair Brief with uncertainty + escalate CTA
-
-### UX rules
-
-- Never show a red “DIAGNOSIS: X” banner
-- Hypotheses in muted “possible causes (unconfirmed)” section
-- Escalation is a first-class success state for `S4_ambiguous`
-- Masks should be obvious in the demo recording
+No “climate quiz” or diagnosis-style banners.
 
 ---
 
-## 12. Demo path (must work live)
+## 12. Fixture dataset (not training data)
 
-### Happy path (`S2_switch_off` recommended hero)
+```text
+fixtures/litter/
+  S1_street_bottles/photo.jpg
+  S2_riverbank_bags/photo.jpg          # hero demo
+  S3_drain_clog/photo.jpg
+  S4_hazard_escalate/photo.jpg
+  S2_riverbank_bags/concern.wav        # optional Voice
+  S2_riverbank_bags/expected-plan.json
+  S4_hazard_escalate/expected-plan.json
+```
 
-1. Upload staged photo of fan with switch visibly off; symptom won’t turn on  
-2. Agent segments `switch` (and optionally `plug`) via SAM  
-3. Spark asks pack question about switch position  
-4. User answers; agent proposes safe check: verify switch while unplugged / confirm position  
-5. Summary: hypothesis “switch may be off,” checks performed, **cause not confirmed**, optional next home follow-up wording from pack  
-6. Show technician notes + overlay  
+| ID | Setup | Expected behavior |
+| --- | --- | --- |
+| S1 | Street bottles visible | SAM ≥1 bottle/bag mask; cleanup-oriented plan |
+| S2 | Riverbank bags (hero) | Segment bank litter; questions; Wonder plan + share card |
+| S3 | Drain grate litter | Segment drain clog; pack action; safety notes |
+| S4 | Hazard lookalike or empty/ambiguous | **Escalate**; no DIY cleanup as primary CTA |
 
-### Escalation path (`S4_ambiguous`)
-
-1. Upload ambiguous photo  
-2. Agent runs required segments + questions + checks  
-3. SafetyGate → escalate  
-4. Brief states insufficient evidence; stop; contact qualified technician  
-
-Record both in the 3-minute video if time allows; hero + 20s escalation is enough.
+Acceptance: Wonder plan references only pack action IDs; S4 escalates.
 
 ---
 
-## 13. Quality gates
+## 13. Demo path (must work live)
 
-From the product validation slide — treat as acceptance tests:
+1. Upload S2 photo; city e.g. Bandung neighborhood; concern text (or voice).  
+2. SAM overlays litter.  
+3. Spark asks 2–3 resource questions.  
+4. Propose pack cleanup action.  
+5. Wonder Action Plan with materials, safety, measure-how, uncertainty.  
+6. Muse Image share card.  
+7. Short cut to S4 escalate.
 
-| Gate | Pass condition |
+---
+
+## 14. Quality gates
+
+| Gate | Pass |
 | --- | --- |
-| Troubleshooting relevance | Suggested checks ⊆ pack for the active scenario |
-| Unsupported claims | No summary sentence asserts a root cause without evidence IDs |
-| Escalation quality | `S4` and hazard answers always escalate |
-| False confidence | Contradictory answers weaken/rule out hypotheses rather than double down |
-
-Fixture folder suggestion: `/fixtures/fan/{S1,S2,S3,S4}/` with photo + expected brief JSON.
-
----
-
-## 14. Out of scope (hackathon)
-
-- Fine-tuning any Muse / open-weight model for fans or repair
-- Multi-device packs beyond household fan
-- Voice input (Muse Voice Transcribe)
-- Guaranteed repair outcomes
-- Energized testing, internal electrical work, disassembly guides
-- Mobile native apps
-- Full auth/billing multi-tenant production hardening (demo-grade security only)
+| Action relevance | Proposed actions ⊆ pack |
+| No lecture-first UX | Primary artifact is Action Plan |
+| No politics | No lobbying/party/protest CTAs in outputs |
+| Unsupported claims | No guaranteed CO₂ / “solved climate” language |
+| Escalation | S4 and hazard answers escalate |
+| Muse breadth | Session uses SAM + Spark + Wonder + Image |
 
 ---
 
-## 15. Environment
+## 15. Out of scope
+
+- RAG / vector databases / climate document chat
+- Fine-tuning any Muse or open-weight model
+- Political advocacy, policy drafting, protest logistics
+- Household fan / device repair (removed)
+- Multi-issue packs beyond plastic/river litter for hackathon
+- Open-weight self-host (unless demo already frozen)
+
+---
+
+## 16. Environment
 
 ```bash
 MODEL_API_KEY=...
@@ -503,22 +469,26 @@ META_API_BASE_URL=https://api.meta.ai/v1
 SUPABASE_URL=...
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+API_PORT=8787
+VITE_API_BASE_URL=http://localhost:8787
 ```
 
-Optional: spend limit on Meta billing so the team stays inside hackathon credits.
+Set Meta billing spend limits; Wonder + Image are credit-heavy.
 
 ---
 
-## 16. Repository layout (target)
+## 17. Target repository layout
 
 ```text
 /
-  architecture.md          ← this file
+  architecture.md
   task.md
-  apps/web                 ← React + Vite
-  apps/api                 ← Node.js
-  packages/device-packs    ← household_fan_v1.json
-  fixtures/fan             ← staged photos + expected briefs
+  apps/web
+  apps/api
+  packages/shared
+  packages/action-packs/plastic_litter_id_v1.json
+  fixtures/litter/{S1,S2,S3,S4}/
+  supabase/migrations/
 ```
 
-This architecture is the build authority. If implementation drifts, update this file in the same PR as the code change.
+This file is the build authority after the FixIt purge.

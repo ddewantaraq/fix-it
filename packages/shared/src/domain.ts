@@ -4,7 +4,7 @@ export const SessionStatusSchema = z.enum([
   "collecting",
   "inspecting",
   "questioning",
-  "checking",
+  "planning",
   "summarizing",
   "done",
   "escalated",
@@ -14,10 +14,12 @@ export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 export const SessionSchema = z.object({
   id: z.string().uuid(),
-  devicePackId: z.literal("household_fan_v1"),
-  symptom: z.literal("wont_turn_on"),
+  actionPackId: z.literal("plastic_litter_id_v1"),
+  concernText: z.string(),
+  city: z.string(),
   status: SessionStatusSchema,
   photoPath: z.string().optional().nullable(),
+  voicePath: z.string().optional().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -27,14 +29,17 @@ export type Session = z.infer<typeof SessionSchema>;
 export const EvidenceKindSchema = z.enum([
   "sam_mask",
   "user_answer",
-  "safe_check_result",
+  "action_accepted",
   "model_observation",
+  "voice_transcript",
 ]);
 
 export const EvidenceSourceSchema = z.enum([
   "sam-3.1",
   "user",
   "muse-spark-1.3",
+  "muse-wonder-1.0",
+  "muse-voice-transcribe-1.0",
   "rules",
 ]);
 
@@ -44,7 +49,7 @@ export const EvidenceItemSchema = z.object({
   kind: EvidenceKindSchema,
   partId: z.string().optional().nullable(),
   questionId: z.string().optional().nullable(),
-  checkId: z.string().optional().nullable(),
+  actionId: z.string().optional().nullable(),
   payload: z.record(z.unknown()),
   source: EvidenceSourceSchema,
   createdAt: z.string(),
@@ -52,35 +57,25 @@ export const EvidenceItemSchema = z.object({
 
 export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
 
-export const HypothesisSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  confidence: z.enum(["low", "medium", "high"]),
-  supportingEvidenceIds: z.array(z.string()),
-  status: z.enum(["candidate", "weakened", "ruled_out", "unresolved"]),
+export const ActionPlanStepSchema = z.object({
+  order: z.number(),
+  title: z.string(),
+  detail: z.string(),
+  owner: z.enum(["solo", "friends", "adult_help"]),
+  timeboxMinutes: z.number(),
+  packActionId: z.string().optional(),
 });
 
-export type Hypothesis = z.infer<typeof HypothesisSchema>;
-
-export const SafeCheckResultSchema = z.object({
-  checkId: z.string(),
-  outcome: z.enum(["pass", "fail", "unclear", "skipped"]),
-  notes: z.string().optional(),
-});
-
-export type SafeCheckResult = z.infer<typeof SafeCheckResultSchema>;
-
-export const RepairBriefSchema = z.object({
+export const ActionPlanSchema = z.object({
   sessionId: z.string().uuid(),
-  device: z.literal("household_fan"),
-  symptom: z.string(),
-  observations: z.array(z.string()),
-  checksPerformed: z.array(SafeCheckResultSchema),
-  hypotheses: z.array(HypothesisSchema),
+  goal: z.string(),
+  steps: z.array(ActionPlanStepSchema),
+  materials: z.array(z.string()),
+  safetyNotes: z.array(z.string()),
+  measureHow: z.array(z.string()),
   uncertainty: z.array(z.string()),
-  recommendation: z.enum(["safe_home_followup", "stop_and_escalate"]),
-  technicianNotes: z.string(),
-  overlayImagePath: z.string().optional(),
+  recommendation: z.enum(["proceed_with_plan", "stop_and_escalate"]),
+  shareCardPath: z.string().optional(),
 });
 
-export type RepairBrief = z.infer<typeof RepairBriefSchema>;
+export type ActionPlan = z.infer<typeof ActionPlanSchema>;

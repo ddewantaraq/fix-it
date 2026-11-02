@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { HypothesisSchema, RepairBriefSchema, SessionStatusSchema } from "./domain.js";
+import { ActionPlanSchema, SessionStatusSchema } from "./domain.js";
 
-/** Frozen contract for POST /sessions/:id/step responses (architecture §9). */
 export const MaskUiSchema = z.object({
   partId: z.string(),
   url: z.string(),
@@ -14,23 +13,20 @@ export const QuestionUiSchema = z.object({
   options: z.array(z.string()).optional(),
 });
 
-export const SafeCheckUiSchema = z.object({
+export const ProposedActionUiSchema = z.object({
   id: z.string(),
   title: z.string(),
-  instructions: z.array(z.string()),
+  steps: z.array(z.string()),
+  materials: z.array(z.string()),
+  durationMinutes: z.number(),
 });
 
 export const AgentStepUiSchema = z.object({
   masks: z.array(MaskUiSchema),
   question: QuestionUiSchema.nullable(),
-  safeCheck: SafeCheckUiSchema.nullable(),
-  hypotheses: z.array(
-    z.object({
-      label: z.string(),
-      confidence: z.enum(["low", "medium", "high"]),
-    }),
-  ),
-  brief: RepairBriefSchema.optional(),
+  proposedAction: ProposedActionUiSchema.nullable(),
+  plan: ActionPlanSchema.nullable().optional(),
+  shareCardUrl: z.string().nullable().optional(),
 });
 
 export const AgentStepResponseSchema = z.object({
@@ -44,8 +40,11 @@ export const AgentStepResponseSchema = z.object({
 export type AgentStepResponse = z.infer<typeof AgentStepResponseSchema>;
 
 export const CreateSessionBodySchema = z.object({
-  devicePackId: z.literal("household_fan_v1").default("household_fan_v1"),
-  symptom: z.literal("wont_turn_on").default("wont_turn_on"),
+  actionPackId: z
+    .literal("plastic_litter_id_v1")
+    .default("plastic_litter_id_v1"),
+  city: z.string().min(1),
+  concernText: z.string().min(1),
 });
 
 export const AnswerBodySchema = z.object({
@@ -53,31 +52,22 @@ export const AnswerBodySchema = z.object({
   value: z.union([z.string(), z.boolean()]),
 });
 
-export const CheckBodySchema = z.object({
-  outcome: z.enum(["pass", "fail", "unclear", "skipped"]),
+export const ActionAcceptBodySchema = z.object({
+  accept: z.boolean().default(true),
   notes: z.string().optional(),
-  unpluggedAcknowledged: z.boolean(),
 });
 
 export const PlannerActionSchema = z.object({
   action: z.enum([
     "segment_parts",
     "ask_question",
-    "propose_safe_check",
-    "finalize_summary",
+    "propose_action",
+    "finalize_plan",
   ]),
   partIds: z.array(z.string()).optional(),
   questionId: z.string().optional(),
-  checkId: z.string().optional(),
+  actionId: z.string().optional(),
   assistantMessage: z.string(),
-  hypotheses: z
-    .array(
-      z.object({
-        label: z.string(),
-        confidence: z.enum(["low", "medium", "high"]),
-      }),
-    )
-    .optional(),
   escalate: z.boolean().optional(),
   escalateReasonId: z.string().optional(),
 });
@@ -87,17 +77,18 @@ export type PlannerAction = z.infer<typeof PlannerActionSchema>;
 export const SessionDetailSchema = z.object({
   session: z.object({
     id: z.string().uuid(),
-    devicePackId: z.literal("household_fan_v1"),
-    symptom: z.literal("wont_turn_on"),
+    actionPackId: z.literal("plastic_litter_id_v1"),
+    concernText: z.string(),
+    city: z.string(),
     status: SessionStatusSchema,
     photoPath: z.string().nullable().optional(),
     photoUrl: z.string().nullable().optional(),
+    voicePath: z.string().nullable().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
   }),
   evidence: z.array(z.record(z.unknown())),
-  hypotheses: z.array(HypothesisSchema),
-  brief: RepairBriefSchema.nullable().optional(),
+  plan: ActionPlanSchema.nullable().optional(),
   lastStep: AgentStepResponseSchema.nullable().optional(),
 });
 

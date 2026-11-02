@@ -1,28 +1,37 @@
 import {
+  ActionPlanSchema,
   PlannerActionSchema,
+  type ActionPack,
+  type ActionPlan,
   type AgentStepResponse,
-  type DevicePack,
-  type Hypothesis,
   type PlannerAction,
-  type RepairBrief,
-  type SafeCheckResult,
-} from "@fix-it/shared";
-import { parseJsonFromModel, segmentWithSam, sparkRespond } from "./meta/client.js";
+} from "@iklim-pal/shared";
+import { randomUUID } from "node:crypto";
 import {
-  assertPackCheck,
+  generateShareCard,
+  parseJsonFromModel,
+  segmentWithSam,
+  sparkRespond,
+  wonderRespond,
+} from "./meta/client.js";
+import {
+  assertPackAction,
   assertPackPart,
   assertPackQuestion,
-  loadFanPack,
+  hasPackAction,
+  isPlannerActionInPack,
+  loadActionPack,
 } from "./pack.js";
 import { BUCKETS, getSupabase } from "./supabase.js";
-import { randomUUID } from "node:crypto";
 
 type SessionRow = {
   id: string;
-  device_pack_id: string;
-  symptom: string;
+  action_pack_id: string;
+  concern_text: string;
+  city: string;
   status: string;
   photo_path: string | null;
+  voice_path: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,7 +42,7 @@ type EvidenceRow = {
   kind: string;
   part_id: string | null;
   question_id: string | null;
-  check_id: string | null;
+  action_id: string | null;
   payload: Record<string, unknown>;
   source: string;
   created_at: string;
@@ -55,15 +64,12 @@ async function downloadPhotoDataUrl(photoPath: string): Promise<string> {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-function hasUnpluggedAck(evidence: EvidenceRow[]): boolean {
-  return evidence.some(
-    (e) =>
-      e.kind === "user_answer" &&
-      e.question_id === "q_unplugged" &&
-      (e.payload.value === true ||
-        e.payload.value === "yes" ||
-        e.payload.value === "Yes" ||
-        e.payload.value === "true"),
+function truthyAnswer(value: unknown): boolean {
+  return (
+    value === true ||
+    value === "yes" ||
+    value === "Yes" ||
+    value === "true"
   );
 }
 
@@ -71,19 +77,22 @@ function hazardTriggered(evidence: EvidenceRow[]): boolean {
   return evidence.some(
     (e) =>
       e.kind === "user_answer" &&
-      e.question_id === "q_smell_spark" &&
-      (e.payload.value === true ||
-        e.payload.value === "yes" ||
-        e.payload.value === "Yes"),
+      e.question_id === "q_hazard" &&
+      truthyAnswer(e.payload.value),
   );
 }
 
-function damageYes(evidence: EvidenceRow[]): boolean {
-  return evidence.some(
-    (e) =>
-      e.kind === "user_answer" &&
-      e.question_id === "q_visible_damage" &&
-      (e.payload.value === "Yes" || e.payload.value === true),
+function answeredIds(evidence: EvidenceRow[]): Set<string> {
+  return new Set(
+    evidence.filter((e) => e.kind === "user_answer" && e.question_id).map((e) => e.question_id!),
+  );
+}
+
+function acceptedActionIds(evidence: EvidenceRow[]): Set<string> {
+  return new Set(
+    evidence
+      .filter((e) => e.kind === "action_accepted" && e.action_id)
+      .map((e) => e.action_id!),
   );
 }
 
@@ -99,7 +108,7 @@ async function insertEvidence(
       kind: row.kind,
       part_id: row.part_id,
       question_id: row.question_id,
-      check_id: row.check_id,
+      action_id: row.action_id,
       payload: row.payload,
       source: row.source,
     })
@@ -109,525 +118,586 @@ async function insertEvidence(
   return data as EvidenceRow;
 }
 
-async function updateSessionStatus(id: string, status: string) {
+async function loadSession(sessionId: string): Promise<SessionRow> {
+  const sb = getSupabase();
+  const { data, error } = await sb.from("sessions").select("*").eq("id", sessionId).single();
+  if (error || !data) throw new Error(error?.message ?? "session not found");
+  return data as SessionRow;
+}
+
+async function loadEvidence(sessionId: string): Promise<EvidenceRow[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("evidence_items")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as EvidenceRow[];
+}
+
+async function setStatus(sessionId: string, status: string) {
   const sb = getSupabase();
   const { error } = await sb
     .from("sessions")
     .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", sessionId);
   if (error) throw new Error(error.message);
 }
 
-async function planNextAction(opts: {
-  pack: DevicePack;
+function emptyStep(
+  sessionId: string,
+  status: AgentStepResponse["status"],
+  assistantMessage: string,
+  escalated = false,
+): AgentStepResponse {
+  return {
+    sessionId,
+    status,
+    assistantMessage,
+    escalated,
+    ui: {
+      masks: [],
+      question: null,
+      proposedAction: null,
+      plan: null,
+      shareCardUrl: null,
+    },
+  };
+}
+
+async function collectMasksUi(evidence: EvidenceRow[]) {
+  const masks: { partId: string; url: string }[] = [];
+  for (const e of evidence.filter((x) => x.kind === "sam_mask")) {
+    const path = typeof e.payload.maskPath === "string" ? e.payload.maskPath : null;
+    const partId = e.part_id ?? "unknown";
+    if (path) {
+      const url = await signedUrl(BUCKETS.masks, path);
+      if (url) masks.push({ partId, url });
+    } else if (typeof e.payload.previewNote === "string") {
+      // SAM returned text-only geometry; surface placeholder via empty url skip
+    }
+  }
+  return masks;
+}
+
+function deterministicPlan(opts: {
+  pack: ActionPack;
+  evidence: EvidenceRow[];
+}): PlannerAction {
+  if (!opts.evidence.some((e) => e.kind === "sam_mask")) {
+    return {
+      action: "segment_parts",
+      partIds: opts.pack.parts.filter((p) => p.requiredForDemo).map((p) => p.id),
+      assistantMessage: "I'll mark visible litter in your photo first.",
+    };
+  }
+  const nextQ = opts.pack.questions.find((q) => !answeredIds(opts.evidence).has(q.id));
+  if (nextQ) {
+    return {
+      action: "ask_question",
+      questionId: nextQ.id,
+      assistantMessage: nextQ.text,
+    };
+  }
+  return {
+    action: "finalize_plan",
+    assistantMessage: "Building your action plan from what we know.",
+  };
+}
+
+function outOfScopeAction(pack: ActionPack): PlannerAction {
+  const stop = pack.stopConditions.find((s) => s.id === "stop_out_of_scope");
+  return {
+    action: "finalize_plan",
+    assistantMessage: stop?.userMessage ?? pack.escalationDefaults.message,
+    escalate: true,
+    escalateReasonId: "stop_out_of_scope",
+  };
+}
+
+async function callSparkPlanner(opts: {
+  pack: ActionPack;
   session: SessionRow;
   evidence: EvidenceRow[];
-  imageDataUrl: string;
+  imageDataUrl?: string;
+  retryHint?: string;
 }): Promise<PlannerAction> {
-  const packSummary = {
-    parts: opts.pack.parts.map((p) => ({ id: p.id, samPhrase: p.samPhrase })),
-    questions: opts.pack.questions.map((q) => ({
-      id: q.id,
-      text: q.text,
-      expects: q.expects,
-      options: q.options,
-    })),
-    safeChecks: opts.pack.safeChecks.map((c) => ({
-      id: c.id,
-      title: c.title,
-    })),
-    stopConditions: opts.pack.stopConditions,
-  };
-
-  const evidenceSummary = opts.evidence.map((e) => ({
-    kind: e.kind,
-    partId: e.part_id,
-    questionId: e.question_id,
-    checkId: e.check_id,
-    payload: e.payload,
-  }));
-
-  const system = `You are the FixIt Vision planner for a household fan that won't turn on.
-You MUST return a single JSON object matching this shape:
-{
-  "action": "segment_parts" | "ask_question" | "propose_safe_check" | "finalize_summary",
-  "partIds": string[] optional,
-  "questionId": string optional,
-  "checkId": string optional,
-  "assistantMessage": string,
-  "hypotheses": [{"label": string, "confidence": "low"|"medium"|"high"}] optional,
-  "escalate": boolean optional,
-  "escalateReasonId": string optional
-}
+  const answered = [...answeredIds(opts.evidence)];
+  const accepted = [...acceptedActionIds(opts.evidence)];
+  const system = `You are the Iklim PAL planner for youth plastic/river litter action.
+Return JSON only matching:
+{"action":"segment_parts"|"ask_question"|"propose_action"|"finalize_plan","partIds":[],"questionId":"","actionId":"","assistantMessage":"","escalate":false,"escalateReasonId":""}
 Rules:
-- Only use IDs from the device pack.
-- Never claim a confirmed root cause.
-- Prefer segment_parts early if no sam_mask evidence yet (use partIds like switch, plug, grille).
-- Ask q_unplugged before any propose_safe_check.
-- If hazard or exposed damage answers are yes, escalate and finalize_summary.
-- Hypotheses are unconfirmed only.
-- No energized repair, no disassembly, no internal electrical steps.`;
+- Only use IDs from the action pack. Never invent IDs.
+- Prefer segment_parts first if no sam_mask evidence yet.
+- Ask unanswered pack questions before proposing actions.
+- Never invent political, lobbying, or protest actions.
+- Never claim guaranteed climate impact or CO2 numbers.
+- If hazard evidence is present, escalate=true.
+- If the user concern cannot be served by this pack (not plastic/river/drain litter), set escalate=true and escalateReasonId="stop_out_of_scope".
+- finalize_plan only after some questions answered (or escalate).
+- No climate science lecture — focus on next practical step.
+${opts.retryHint ? `\nRETRY: ${opts.retryHint}` : ""}`;
 
-  const userText = `Session status: ${opts.session.status}
-Symptom: ${opts.session.symptom}
-Device pack: ${JSON.stringify(packSummary)}
-Evidence so far: ${JSON.stringify(evidenceSummary)}
-Choose the single next action.`;
+  const userText = JSON.stringify({
+    city: opts.session.city,
+    concernText: opts.session.concern_text,
+    status: opts.session.status,
+    answeredQuestionIds: answered,
+    acceptedActionIds: accepted,
+    evidenceKinds: opts.evidence.map((e) => e.kind),
+    pack: {
+      parts: opts.pack.parts.map((p) => ({ id: p.id, samPhrase: p.samPhrase })),
+      questions: opts.pack.questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        expects: q.expects,
+        options: q.options,
+      })),
+      actions: opts.pack.actions.map((a) => ({
+        id: a.id,
+        title: a.title,
+        forbiddenIf: a.forbiddenIf,
+      })),
+      stopConditions: opts.pack.stopConditions,
+    },
+  });
 
   const { text } = await sparkRespond({
     system,
     userText,
     imageDataUrl: opts.imageDataUrl,
-    jsonSchemaHint: "object",
   });
-
-  const parsed = PlannerActionSchema.parse(parseJsonFromModel(text));
-
-  // Validate IDs against pack
-  if (parsed.partIds) {
-    for (const id of parsed.partIds) assertPackPart(opts.pack, id);
-  }
-  if (parsed.questionId) assertPackQuestion(opts.pack, parsed.questionId);
-  if (parsed.checkId) assertPackCheck(opts.pack, parsed.checkId);
-  return parsed;
+  return PlannerActionSchema.parse(parseJsonFromModel(text));
 }
 
-function fallbackPlan(evidence: EvidenceRow[]): PlannerAction {
-  const hasMask = evidence.some((e) => e.kind === "sam_mask");
-  if (!hasMask) {
-    return {
-      action: "segment_parts",
-      partIds: ["switch", "plug", "grille"],
-      assistantMessage:
-        "I'll inspect visible parts on the fan photo (switch, plug, grille).",
-      hypotheses: [],
-    };
+async function planNext(opts: {
+  pack: ActionPack;
+  session: SessionRow;
+  evidence: EvidenceRow[];
+  imageDataUrl?: string;
+}): Promise<PlannerAction> {
+  let planned: PlannerAction;
+  try {
+    planned = await callSparkPlanner(opts);
+  } catch {
+    planned = deterministicPlan(opts);
   }
-  if (!evidence.some((e) => e.question_id === "q_unplugged")) {
-    return {
-      action: "ask_question",
-      questionId: "q_unplugged",
-      assistantMessage:
-        "Before any physical check: is the fan unplugged from the wall outlet right now?",
-    };
+
+  if (planned.escalate) return planned;
+
+  if (!isPlannerActionInPack(opts.pack, planned)) {
+    try {
+      planned = await callSparkPlanner({
+        ...opts,
+        retryHint:
+          "Previous response used unknown pack IDs. Use only IDs listed in pack, or escalate with escalateReasonId stop_out_of_scope.",
+      });
+    } catch {
+      return outOfScopeAction(opts.pack);
+    }
+    if (planned.escalate) return planned;
+    if (!isPlannerActionInPack(opts.pack, planned)) {
+      return outOfScopeAction(opts.pack);
+    }
   }
-  if (!evidence.some((e) => e.question_id === "q_switch_position")) {
-    return {
-      action: "ask_question",
-      questionId: "q_switch_position",
-      assistantMessage: "Looking at the power switch, is it set to On or Off?",
-      hypotheses: [{ label: "switch may be off", confidence: "medium" }],
-    };
-  }
-  if (!evidence.some((e) => e.kind === "safe_check_result")) {
-    return {
-      action: "propose_safe_check",
-      checkId: "check_verify_switch",
-      assistantMessage:
-        "Possible (unconfirmed): switch may be off. Please verify the switch position while unplugged.",
-      hypotheses: [{ label: "switch may be off", confidence: "medium" }],
-    };
-  }
-  return {
-    action: "finalize_summary",
-    assistantMessage: "Building an uncertainty-aware repair brief.",
-  };
+
+  return planned;
+}
+
+async function escalateOutOfScope(
+  sessionId: string,
+  pack: ActionPack,
+  message?: string,
+): Promise<AgentStepResponse> {
+  const stop = pack.stopConditions.find((s) => s.id === "stop_out_of_scope");
+  await setStatus(sessionId, "escalated");
+  await insertEvidence({
+    session_id: sessionId,
+    kind: "model_observation",
+    part_id: null,
+    question_id: null,
+    action_id: null,
+    payload: { reason: "stop_out_of_scope", message: message ?? stop?.userMessage },
+    source: "rules",
+  });
+  return emptyStep(
+    sessionId,
+    "escalated",
+    message ?? stop?.userMessage ?? pack.escalationDefaults.message,
+    true,
+  );
 }
 
 async function runSegment(
   session: SessionRow,
-  pack: DevicePack,
+  pack: ActionPack,
   partIds: string[],
   imageDataUrl: string,
-): Promise<{ masks: { partId: string; url: string }[]; message: string }> {
-  const masks: { partId: string; url: string }[] = [];
-  const sb = getSupabase();
-
-  for (const partId of partIds) {
-    const part = pack.parts.find((p) => p.id === partId);
-    if (!part) throw new Error(`Unknown pack part id: ${partId}`);
-
-    const { raw, text } = await segmentWithSam({
+): Promise<void> {
+  const ids = partIds.length
+    ? partIds
+    : pack.parts.filter((p) => p.requiredForDemo).map((p) => p.id);
+  for (const partId of ids) {
+    assertPackPart(pack, partId);
+    const part = pack.parts.find((p) => p.id === partId)!;
+    const sam = await segmentWithSam({
       imageDataUrl,
       phrase: part.samPhrase,
     });
-
     const maskPath = `${session.id}/${partId}-${Date.now()}.json`;
-    const blob = new Blob([JSON.stringify({ phrase: part.samPhrase, text, raw })], {
-      type: "application/json",
-    });
-    const { error: upErr } = await sb.storage
+    const sb = getSupabase();
+    await sb.storage
       .from(BUCKETS.masks)
-      .upload(maskPath, blob, { contentType: "application/json", upsert: true });
-    if (upErr) throw new Error(`Mask upload failed: ${upErr.message}`);
-
-    const url = (await signedUrl(BUCKETS.masks, maskPath)) ?? maskPath;
+      .upload(maskPath, Buffer.from(JSON.stringify({ phrase: part.samPhrase, sam: sam.text })), {
+        contentType: "application/json",
+        upsert: true,
+      });
     await insertEvidence({
       session_id: session.id,
       kind: "sam_mask",
       part_id: partId,
       question_id: null,
-      check_id: null,
-      payload: { maskPath, phrase: part.samPhrase, preview: text.slice(0, 500) },
+      action_id: null,
+      payload: { maskPath, samText: sam.text.slice(0, 2000), samPhrase: part.samPhrase },
       source: "sam-3.1",
     });
-    masks.push({ partId, url });
   }
-
-  await updateSessionStatus(session.id, "inspecting");
-  return {
-    masks,
-    message: `Segmented: ${partIds.join(", ")}. Treat findings as visual evidence only.`,
-  };
+  await setStatus(session.id, "inspecting");
 }
 
-function buildBrief(opts: {
+async function finalizePlan(opts: {
   session: SessionRow;
+  pack: ActionPack;
   evidence: EvidenceRow[];
-  hypotheses: Hypothesis[];
-  escalate: boolean;
-  pack: DevicePack;
-}): RepairBrief {
-  const checks: SafeCheckResult[] = opts.evidence
-    .filter((e) => e.kind === "safe_check_result")
-    .map((e) => ({
-      checkId: e.check_id ?? "unknown",
-      outcome: (e.payload.outcome as SafeCheckResult["outcome"]) ?? "unclear",
-      notes: typeof e.payload.notes === "string" ? e.payload.notes : undefined,
-    }));
+  imageDataUrl?: string;
+}): Promise<{ plan: ActionPlan; shareCardUrl: string | null }> {
+  const system = `You are Muse Wonder synthesizing an Iklim PAL Action Plan for youth.
+Return JSON only:
+{"goal":"","steps":[{"order":1,"title":"","detail":"","owner":"solo"|"friends"|"adult_help","timeboxMinutes":30,"packActionId":""}],"materials":[],"safetyNotes":[],"measureHow":[],"uncertainty":[],"recommendation":"proceed_with_plan"|"stop_and_escalate"}
+Rules:
+- packActionId must be from the pack or omitted.
+- No politics, lobbying, protests, parties.
+- No guaranteed CO2 / climate-solved claims.
+- If hazards present, recommendation stop_and_escalate.
+- Keep steps practical and measurable (bags, before/after photos).`;
 
-  const observations: string[] = [];
-  for (const e of opts.evidence) {
-    if (e.kind === "sam_mask") {
-      observations.push(
-        `SAM inspected part "${e.part_id}" (${String(e.payload.phrase ?? "")}).`,
-      );
+  const { text } = await wonderRespond({
+    system,
+    userText: JSON.stringify({
+      city: opts.session.city,
+      concern: opts.session.concern_text,
+      evidence: opts.evidence.map((e) => ({
+        kind: e.kind,
+        partId: e.part_id,
+        questionId: e.question_id,
+        actionId: e.action_id,
+        payload: e.payload,
+      })),
+      packActions: opts.pack.actions,
+      escalationDefaults: opts.pack.escalationDefaults,
+    }),
+    imageDataUrl: opts.imageDataUrl,
+  });
+
+  const rawPlan = parseJsonFromModel(text) as Record<string, unknown>;
+  const plan = ActionPlanSchema.parse({
+    ...rawPlan,
+    sessionId: opts.session.id,
+  });
+
+  // Drop unknown pack action IDs instead of failing the whole plan
+  plan.steps = plan.steps.map((step) => {
+    if (step.packActionId && !hasPackAction(opts.pack, step.packActionId)) {
+      const { packActionId: _drop, ...rest } = step;
+      return rest;
     }
-    if (e.kind === "user_answer") {
-      observations.push(
-        `User answered ${e.question_id}: ${JSON.stringify(e.payload.value)}.`,
-      );
-    }
+    return step;
+  });
+  if (plan.steps.length === 0 && plan.recommendation === "proceed_with_plan") {
+    plan.recommendation = "stop_and_escalate";
+    plan.uncertainty = [
+      ...(plan.uncertainty ?? []),
+      "No pack-approved action IDs remained after validation.",
+    ];
   }
 
-  const uncertainty: string[] = [];
-  if (opts.escalate) uncertainty.push("insufficient_visual_evidence");
-  if (!checks.length) uncertainty.push("no_pack_check_remaining");
+  let shareCardUrl: string | null = null;
+  let shareCardPath: string | undefined;
+  try {
+    const card = await generateShareCard({
+      prompt: `Create a friendly youth cleanup invite card for Iklim PAL. City: ${opts.session.city}. Goal: ${plan.goal}. Non-political community litter cleanup. Bold readable text, hopeful outdoor vibe, no logos of political parties.`,
+      referenceImageDataUrl: opts.imageDataUrl,
+    });
+    if (card.dataUrl) {
+      shareCardPath = `${opts.session.id}/share-${Date.now()}.png`;
+      const sb = getSupabase();
+      let buf: Buffer;
+      if (card.dataUrl.startsWith("data:")) {
+        buf = Buffer.from(card.dataUrl.split(",")[1] ?? "", "base64");
+      } else {
+        const imgRes = await fetch(card.dataUrl);
+        buf = Buffer.from(await imgRes.arrayBuffer());
+      }
+      await sb.storage.from(BUCKETS.shareCards).upload(shareCardPath, buf, {
+        contentType: "image/png",
+        upsert: true,
+      });
+      shareCardUrl = await signedUrl(BUCKETS.shareCards, shareCardPath);
+      plan.shareCardPath = shareCardPath;
+    }
+  } catch {
+    // Image is P0 but demo continues without card if API fails
+  }
 
-  return {
-    sessionId: opts.session.id,
-    device: "household_fan",
-    symptom: opts.session.symptom,
-    observations,
-    checksPerformed: checks,
-    hypotheses: opts.hypotheses,
-    uncertainty: uncertainty.length
-      ? uncertainty
-      : ["cause_not_confirmed"],
-    recommendation: opts.escalate ? "stop_and_escalate" : "safe_home_followup",
-    technicianNotes: opts.escalate
-      ? opts.pack.escalationDefaults.message
-      : "User completed guided safe external checks. Root cause is not confirmed. Share observations and check outcomes with a technician if the fan still does not run.",
-  };
+  const sb = getSupabase();
+  await sb.from("action_plans").insert({
+    session_id: opts.session.id,
+    plan,
+    share_card_path: shareCardPath ?? null,
+  });
+
+  await insertEvidence({
+    session_id: opts.session.id,
+    kind: "model_observation",
+    part_id: null,
+    question_id: null,
+    action_id: null,
+    payload: { planGoal: plan.goal, recommendation: plan.recommendation },
+    source: "muse-wonder-1.0",
+  });
+
+  const status =
+    plan.recommendation === "stop_and_escalate" ? "escalated" : "done";
+  await setStatus(opts.session.id, status);
+
+  return { plan, shareCardUrl };
 }
 
 export async function runAgentStep(sessionId: string): Promise<AgentStepResponse> {
-  const pack = loadFanPack();
-  const sb = getSupabase();
+  const pack = loadActionPack();
+  const session = await loadSession(sessionId);
+  let evidence = await loadEvidence(sessionId);
 
-  const { data: session, error } = await sb
-    .from("sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .single();
-  if (error || !session) throw new Error(error?.message ?? "Session not found");
-  const sessionRow = session as SessionRow;
-
-  if (!sessionRow.photo_path) {
-    throw new Error("Upload a photo before running agent steps.");
-  }
-
-  const { data: evidence, error: evErr } = await sb
-    .from("evidence_items")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
-  if (evErr) throw new Error(evErr.message);
-  const evidenceRows = (evidence ?? []) as EvidenceRow[];
-
-  if (hazardTriggered(evidenceRows) || damageYes(evidenceRows)) {
-    const brief = buildBrief({
-      session: sessionRow,
-      evidence: evidenceRows,
-      hypotheses: [],
-      escalate: true,
-      pack,
-    });
-    await sb.from("repair_briefs").insert({
-      session_id: sessionId,
-      brief,
-    });
-    await updateSessionStatus(sessionId, "escalated");
-    return {
+  if (hazardTriggered(evidence)) {
+    await setStatus(sessionId, "escalated");
+    const stop = pack.stopConditions.find((s) => s.id === "stop_hazard");
+    return emptyStep(
       sessionId,
-      status: "escalated",
-      assistantMessage: hazardTriggered(evidenceRows)
-        ? pack.stopConditions.find((s) => s.id === "stop_hazard")!.userMessage
-        : pack.stopConditions.find((s) => s.id === "stop_exposed_conductors")!
-            .userMessage,
-      ui: {
-        masks: [],
-        question: null,
-        safeCheck: null,
-        hypotheses: [],
-        brief,
-      },
-      escalated: true,
-    };
+      "escalated",
+      stop?.userMessage ?? pack.escalationDefaults.message,
+      true,
+    );
   }
 
-  const imageDataUrl = await downloadPhotoDataUrl(sessionRow.photo_path);
+  if (!session.photo_path) {
+    return emptyStep(sessionId, "collecting", "Upload a photo of the litter concern first.");
+  }
 
-  let plan: PlannerAction;
+  const imageDataUrl = await downloadPhotoDataUrl(session.photo_path);
+  const planned = await planNext({ pack, session, evidence, imageDataUrl });
+
+  if (planned.escalate) {
+    if (planned.escalateReasonId === "stop_out_of_scope") {
+      return escalateOutOfScope(sessionId, pack, planned.assistantMessage);
+    }
+    await setStatus(sessionId, "escalated");
+    return emptyStep(
+      sessionId,
+      "escalated",
+      planned.assistantMessage || pack.escalationDefaults.message,
+      true,
+    );
+  }
+
   try {
-    plan = await planNextAction({
-      pack,
-      session: sessionRow,
-      evidence: evidenceRows,
-      imageDataUrl,
-    });
-  } catch (err) {
-    console.warn("Planner failed, using fallback:", err);
-    plan = fallbackPlan(evidenceRows);
-  }
+    if (planned.action === "segment_parts") {
+      await runSegment(session, pack, planned.partIds ?? [], imageDataUrl);
+      evidence = await loadEvidence(sessionId);
+      const masks = await collectMasksUi(evidence);
+      return {
+        sessionId,
+        status: "inspecting",
+        assistantMessage: planned.assistantMessage,
+        escalated: false,
+        ui: { masks, question: null, proposedAction: null, plan: null, shareCardUrl: null },
+      };
+    }
 
-  const hypoUi = plan.hypotheses ?? [];
-
-  if (plan.action === "segment_parts") {
-    const partIds = plan.partIds?.length
-      ? plan.partIds
-      : ["switch", "plug", "grille"];
-    for (const id of partIds) assertPackPart(pack, id);
-    const { masks, message } = await runSegment(
-      sessionRow,
-      pack,
-      partIds,
-      imageDataUrl,
-    );
-    return {
-      sessionId,
-      status: "inspecting",
-      assistantMessage: plan.assistantMessage || message,
-      ui: {
-        masks,
-        question: null,
-        safeCheck: null,
-        hypotheses: hypoUi,
-      },
-      escalated: false,
-    };
-  }
-
-  if (plan.action === "ask_question") {
-    const q = assertPackQuestion(
-      pack,
-      plan.questionId ?? "q_unplugged",
-    );
-    await updateSessionStatus(sessionId, "questioning");
-    return {
-      sessionId,
-      status: "questioning",
-      assistantMessage: plan.assistantMessage || q.text,
-      ui: {
-        masks: [],
-        question: {
-          id: q.id,
-          text: q.text,
-          expects: q.expects,
-          options: q.options,
-        },
-        safeCheck: null,
-        hypotheses: hypoUi,
-      },
-      escalated: false,
-    };
-  }
-
-  if (plan.action === "propose_safe_check") {
-    if (!hasUnpluggedAck(evidenceRows)) {
-      const q = assertPackQuestion(pack, "q_unplugged");
-      await updateSessionStatus(sessionId, "questioning");
+    if (planned.action === "ask_question") {
+      const qid = planned.questionId;
+      if (!qid || !isPlannerActionInPack(pack, planned)) {
+        return escalateOutOfScope(sessionId, pack);
+      }
+      assertPackQuestion(pack, qid);
+      const q = pack.questions.find((x) => x.id === qid)!;
+      await setStatus(sessionId, "questioning");
+      const masks = await collectMasksUi(evidence);
       return {
         sessionId,
         status: "questioning",
-        assistantMessage:
-          "Safety gate: confirm the fan is unplugged before any physical check.",
+        assistantMessage: planned.assistantMessage || q.text,
+        escalated: false,
         ui: {
-          masks: [],
+          masks,
           question: {
             id: q.id,
             text: q.text,
             expects: q.expects,
             options: q.options,
           },
-          safeCheck: null,
-          hypotheses: hypoUi,
+          proposedAction: null,
+          plan: null,
+          shareCardUrl: null,
         },
-        escalated: false,
       };
     }
 
-    const check = assertPackCheck(
+    if (planned.action === "propose_action") {
+      const aid = planned.actionId;
+      if (!aid || !isPlannerActionInPack(pack, planned)) {
+        return escalateOutOfScope(sessionId, pack);
+      }
+      assertPackAction(pack, aid);
+      const action = pack.actions.find((a) => a.id === aid)!;
+      await setStatus(sessionId, "planning");
+      const masks = await collectMasksUi(evidence);
+      return {
+        sessionId,
+        status: "planning",
+        assistantMessage: planned.assistantMessage || action.title,
+        escalated: false,
+        ui: {
+          masks,
+          question: null,
+          proposedAction: {
+            id: action.id,
+            title: action.title,
+            steps: action.steps,
+            materials: action.materials,
+            durationMinutes: action.durationMinutes,
+          },
+          plan: null,
+          shareCardUrl: null,
+        },
+      };
+    }
+
+    // finalize_plan
+    await setStatus(sessionId, "summarizing");
+    const { plan, shareCardUrl } = await finalizePlan({
+      session,
       pack,
-      plan.checkId ?? "check_verify_switch",
-    );
-    await updateSessionStatus(sessionId, "checking");
+      evidence,
+      imageDataUrl,
+    });
+    const masks = await collectMasksUi(evidence);
     return {
       sessionId,
-      status: "checking",
-      assistantMessage: plan.assistantMessage || check.title,
+      status: plan.recommendation === "stop_and_escalate" ? "escalated" : "done",
+      assistantMessage: planned.assistantMessage || "Here is your action plan.",
+      escalated: plan.recommendation === "stop_and_escalate",
       ui: {
-        masks: [],
+        masks,
         question: null,
-        safeCheck: {
-          id: check.id,
-          title: check.title,
-          instructions: check.instructions,
-        },
-        hypotheses: hypoUi,
+        proposedAction: null,
+        plan,
+        shareCardUrl,
       },
-      escalated: false,
     };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("Unknown ")) {
+      return escalateOutOfScope(sessionId, pack);
+    }
+    throw err;
   }
-
-  // finalize_summary
-  const escalate = Boolean(plan.escalate) || evidenceRows.length < 2;
-  const hypotheses: Hypothesis[] = (plan.hypotheses ?? []).map((h, i) => ({
-    id: `h-${i}`,
-    label: h.label,
-    confidence: h.confidence,
-    supportingEvidenceIds: [],
-    status: "candidate" as const,
-  }));
-  const brief = buildBrief({
-    session: sessionRow,
-    evidence: evidenceRows,
-    hypotheses,
-    escalate,
-    pack,
-  });
-  await sb.from("repair_briefs").insert({ session_id: sessionId, brief });
-  await updateSessionStatus(sessionId, escalate ? "escalated" : "done");
-  return {
-    sessionId,
-    status: escalate ? "escalated" : "done",
-    assistantMessage:
-      plan.assistantMessage ||
-      (escalate
-        ? pack.escalationDefaults.message
-        : "Summary ready. Cause is not confirmed."),
-    ui: {
-      masks: [],
-      question: null,
-      safeCheck: null,
-      hypotheses: hypoUi,
-      brief,
-    },
-    escalated: escalate,
-  };
 }
 
 export async function recordAnswer(
   sessionId: string,
   questionId: string,
   value: string | boolean,
-) {
-  const pack = loadFanPack();
+): Promise<AgentStepResponse> {
+  const pack = loadActionPack();
   assertPackQuestion(pack, questionId);
   await insertEvidence({
     session_id: sessionId,
     kind: "user_answer",
     part_id: null,
     question_id: questionId,
-    check_id: null,
+    action_id: null,
     payload: { value },
     source: "user",
   });
+  if (questionId === "q_hazard" && truthyAnswer(value)) {
+    await setStatus(sessionId, "escalated");
+    const stop = pack.stopConditions.find((s) => s.id === "stop_hazard")!;
+    return emptyStep(sessionId, "escalated", stop.userMessage, true);
+  }
+  return runAgentStep(sessionId);
 }
 
-export async function recordCheck(
+export async function recordActionAccept(
   sessionId: string,
-  checkId: string,
-  outcome: SafeCheckResult["outcome"],
-  notes: string | undefined,
-  unpluggedAcknowledged: boolean,
-) {
-  const pack = loadFanPack();
-  assertPackCheck(pack, checkId);
-  if (!unpluggedAcknowledged) {
-    throw new Error("unpluggedAcknowledged must be true before recording a safe check");
+  actionId: string,
+  accept: boolean,
+  notes?: string,
+): Promise<AgentStepResponse> {
+  const pack = loadActionPack();
+  assertPackAction(pack, actionId);
+  if (accept) {
+    await insertEvidence({
+      session_id: sessionId,
+      kind: "action_accepted",
+      part_id: null,
+      question_id: null,
+      action_id: actionId,
+      payload: { accept: true, notes: notes ?? null },
+      source: "user",
+    });
   }
-  await insertEvidence({
-    session_id: sessionId,
-    kind: "safe_check_result",
-    part_id: null,
-    question_id: null,
-    check_id: checkId,
-    payload: { outcome, notes, unpluggedAcknowledged: true },
-    source: "user",
-  });
+  return runAgentStep(sessionId);
 }
 
 export async function getSessionDetail(sessionId: string) {
+  const session = await loadSession(sessionId);
+  const evidence = await loadEvidence(sessionId);
   const sb = getSupabase();
-  const { data: session, error } = await sb
-    .from("sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .single();
-  if (error || !session) throw new Error(error?.message ?? "Session not found");
-
-  const { data: evidence } = await sb
-    .from("evidence_items")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
-
-  const { data: hypotheses } = await sb
-    .from("hypotheses")
-    .select("*")
-    .eq("session_id", sessionId);
-
-  const { data: briefs } = await sb
-    .from("repair_briefs")
+  const { data: planRow } = await sb
+    .from("action_plans")
     .select("*")
     .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(1)
+    .maybeSingle();
 
-  const photoUrl = session.photo_path
-    ? await signedUrl(BUCKETS.photos, session.photo_path)
-    : null;
+  let photoUrl: string | null = null;
+  if (session.photo_path) {
+    photoUrl = await signedUrl(BUCKETS.photos, session.photo_path);
+  }
+
+  let plan: ActionPlan | null = null;
+  if (planRow?.plan) {
+    plan = ActionPlanSchema.parse({ ...planRow.plan, sessionId });
+  }
 
   return {
     session: {
       id: session.id,
-      devicePackId: "household_fan_v1" as const,
-      symptom: "wont_turn_on" as const,
-      status: session.status,
+      actionPackId: "plastic_litter_id_v1" as const,
+      concernText: session.concern_text,
+      city: session.city,
+      status: session.status as AgentStepResponse["status"],
       photoPath: session.photo_path,
       photoUrl,
+      voicePath: session.voice_path,
       createdAt: session.created_at,
       updatedAt: session.updated_at,
     },
-    evidence: evidence ?? [],
-    hypotheses: (hypotheses ?? []).map((h) => ({
-      id: h.id,
-      label: h.label,
-      confidence: h.confidence,
-      supportingEvidenceIds: h.supporting_evidence_ids ?? [],
-      status: h.status,
-    })),
-    brief: briefs?.[0]?.brief ?? null,
+    evidence,
+    plan,
+    lastStep: null,
   };
 }

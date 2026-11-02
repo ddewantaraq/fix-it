@@ -1,0 +1,7 @@
+{
+  "scenario": "S2_riverbank_bags",
+  "expectRecommendation": "proceed_with_plan",
+  "mustUsePackActionIds": ["act_photo_map", "act_buddy_cleanup", "act_invite_card"],
+  "mustNotContain": ["vote", "protest", "lobby", "CO2 guaranteed"],
+  "notes": "Hero demo: SAM masks + questions + Wonder plan + Muse Image share card"
+}

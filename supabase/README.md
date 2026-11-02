@@ -1,30 +1,19 @@
-# Supabase setup
+# Supabase setup — Iklim PAL
 
-1. Create a free project at https://supabase.com
-2. Copy Project URL, anon key, and service role key into repo-root `.env`
-3. Open **SQL Editor** → paste and run [`migrations/001_init.sql`](./migrations/001_init.sql)
-4. Open **Storage** → create private buckets:
+1. Create a Supabase project.
+2. Run [`migrations/002_iklim_pal.sql`](migrations/002_iklim_pal.sql) in the SQL editor (preferred for new projects).
+3. Create storage buckets:
    - `session-photos`
    - `session-masks`
-   - `session-overlays`
-5. (Optional) seed the device pack:
+   - `session-share-cards`
+   - `session-voice`
+4. Put URL + service role key in repo-root `.env`.
+5. Seed pack FK (API also upserts on session create):
 
 ```sql
-insert into public.device_packs (id, version, json)
-values (
-  'household_fan_v1',
-  '1',
-  '{}'::jsonb  -- replace with contents of packages/device-packs/household_fan_v1.json if desired
-)
+insert into public.action_packs (id, version, json)
+values ('plastic_litter_id_v1', '1', '{"id":"plastic_litter_id_v1"}'::jsonb)
 on conflict (id) do nothing;
 ```
 
-The API loads the pack from the repo JSON at runtime; the `device_packs` table is for session FK integrity. Insert a stub row:
-
-```sql
-insert into public.device_packs (id, version, json)
-values ('household_fan_v1', '1', '{"id":"household_fan_v1"}'::jsonb)
-on conflict (id) do nothing;
-```
-
-API uses `SUPABASE_SERVICE_ROLE_KEY` for inserts/uploads (never expose that key to the browser).
+If you previously applied `001_init.sql` (fan schema), prefer a fresh project or drop old `device_packs` / `repair_briefs` tables before applying `002_iklim_pal.sql`.

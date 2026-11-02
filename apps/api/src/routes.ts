@@ -1,17 +1,18 @@
 import { Router } from "express";
 import multer from "multer";
 import {
+  ActionAcceptBodySchema,
   AnswerBodySchema,
-  CheckBodySchema,
   CreateSessionBodySchema,
-} from "@fix-it/shared";
+} from "@iklim-pal/shared";
 import {
   getSessionDetail,
+  recordActionAccept,
   recordAnswer,
-  recordCheck,
   runAgentStep,
 } from "./agent.js";
-import { loadFanPack } from "./pack.js";
+import { transcribeVoice } from "./meta/client.js";
+import { loadActionPack } from "./pack.js";
 import { BUCKETS, getSupabase } from "./supabase.js";
 
 const upload = multer({
@@ -22,31 +23,32 @@ const upload = multer({
 export const router = Router();
 
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "fix-it-api" });
+  res.json({ ok: true, service: "iklim-pal-api" });
 });
 
-router.get("/packs/household_fan_v1", (_req, res) => {
-  res.json(loadFanPack());
+router.get("/packs/plastic_litter_id_v1", (_req, res) => {
+  res.json(loadActionPack());
 });
 
 router.post("/sessions", async (req, res) => {
   try {
     const body = CreateSessionBodySchema.parse(req.body ?? {});
     const sb = getSupabase();
+    const pack = loadActionPack();
 
-    // Ensure FK row exists
-    await sb.from("device_packs").upsert({
-      id: "household_fan_v1",
+    await sb.from("action_packs").upsert({
+      id: "plastic_litter_id_v1",
       version: "1",
-      json: loadFanPack(),
+      json: pack,
       updated_at: new Date().toISOString(),
     });
 
     const { data, error } = await sb
       .from("sessions")
       .insert({
-        device_pack_id: body.devicePackId,
-        symptom: body.symptom,
+        action_pack_id: body.actionPackId,
+        concern_text: body.concernText,
+        city: body.city,
         status: "collecting",
       })
       .select("*")
@@ -55,8 +57,9 @@ router.post("/sessions", async (req, res) => {
     if (error) throw new Error(error.message);
     res.status(201).json({
       id: data.id,
-      devicePackId: data.device_pack_id,
-      symptom: data.symptom,
+      actionPackId: data.action_pack_id,
+      concernText: data.concern_text,
+      city: data.city,
       status: data.status,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
@@ -78,33 +81,64 @@ router.post("/sessions/:id/photo", upload.single("photo"), async (req, res) => {
         : req.file.mimetype === "image/webp"
           ? "webp"
           : "jpg";
-    const path = `${sessionId}/original.${ext}`;
-
-    const { error: upErr } = await sb.storage
-      .from(BUCKETS.photos)
-      .upload(path, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: true,
-      });
+    const path = `${sessionId}/photo.${ext}`;
+    const { error: upErr } = await sb.storage.from(BUCKETS.photos).upload(path, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: true,
+    });
     if (upErr) throw new Error(upErr.message);
 
-    const { data, error } = await sb
+    const { error } = await sb
       .from("sessions")
       .update({
         photo_path: path,
         status: "inspecting",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", sessionId)
-      .select("*")
-      .single();
+      .eq("id", sessionId);
     if (error) throw new Error(error.message);
 
-    res.json({
-      id: data.id,
-      photoPath: data.photo_path,
-      status: data.status,
+    res.json({ ok: true, photoPath: path });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/sessions/:id/voice", upload.single("audio"), async (req, res) => {
+  try {
+    const sessionId = req.params.id;
+    if (!req.file) throw new Error("audio file required (multipart field: audio)");
+
+    const sb = getSupabase();
+    const path = `${sessionId}/concern.wav`;
+    await sb.storage.from(BUCKETS.voice).upload(path, req.file.buffer, {
+      contentType: req.file.mimetype || "audio/wav",
+      upsert: true,
     });
+
+    const { text } = await transcribeVoice({
+      audio: req.file.buffer,
+      filename: req.file.originalname || "concern.wav",
+      mime: req.file.mimetype || "audio/wav",
+    });
+
+    await sb
+      .from("sessions")
+      .update({
+        voice_path: path,
+        concern_text: text,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", sessionId);
+
+    await sb.from("evidence_items").insert({
+      session_id: sessionId,
+      kind: "voice_transcript",
+      payload: { text },
+      source: "muse-voice-transcribe-1.0",
+    });
+
+    res.json({ ok: true, transcript: text, voicePath: path });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -121,26 +155,23 @@ router.post("/sessions/:id/step", async (req, res) => {
 
 router.post("/sessions/:id/answers", async (req, res) => {
   try {
-    const body = AnswerBodySchema.parse(req.body);
-    await recordAnswer(req.params.id, body.questionId, body.value);
-    const step = await runAgentStep(req.params.id);
+    const body = AnswerBodySchema.parse(req.body ?? {});
+    const step = await recordAnswer(req.params.id, body.questionId, body.value);
     res.json(step);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-router.post("/sessions/:id/checks/:checkId", async (req, res) => {
+router.post("/sessions/:id/actions/:actionId", async (req, res) => {
   try {
-    const body = CheckBodySchema.parse(req.body);
-    await recordCheck(
+    const body = ActionAcceptBodySchema.parse(req.body ?? {});
+    const step = await recordActionAccept(
       req.params.id,
-      req.params.checkId,
-      body.outcome,
+      req.params.actionId,
+      body.accept,
       body.notes,
-      body.unpluggedAcknowledged,
     );
-    const step = await runAgentStep(req.params.id);
     res.json(step);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
@@ -149,7 +180,7 @@ router.post("/sessions/:id/checks/:checkId", async (req, res) => {
 
 router.post("/sessions/:id/finalize", async (req, res) => {
   try {
-    // Force finalize by calling step until done — for D1, one finalize path via planner fallback
+    // Force planner toward finalize by running step; client may call after answers.
     const step = await runAgentStep(req.params.id);
     res.json(step);
   } catch (err) {

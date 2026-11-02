@@ -1,0 +1,253 @@
+{
+  "id": "plastic_litter_id_v1",
+  "displayName": "Plastic & river litter — Indonesia youth",
+  "localeHint": "id-youth",
+  "supportedConcerns": ["plastic_litter", "river_litter", "drain_litter"],
+  "sources": [
+    {
+      "id": "oc_toolkit",
+      "title": "Cleanup Toolkit (2025)",
+      "organization": "Ocean Conservancy",
+      "url": "https://oceanconservancy.org/wp-content/uploads/2025/04/Cleanup-Toolkit-_-2025.pdf",
+      "informs": [
+        "gloves and reusable bags/buckets",
+        "water / hydration for volunteers",
+        "first-aid kit recommendation"
+      ]
+    },
+    {
+      "id": "hk_epd_safety",
+      "title": "Safety Guidelines for Beach / Shoreline Cleanup Activity",
+      "organization": "Hong Kong Environmental Protection Department",
+      "url": "https://www.epd.gov.hk/epd/clean_shorelines/files/Safety_Guidelines_EN.pdf",
+      "informs": [
+        "closed-toe shoes; no bare hands",
+        "do not pick medical waste / syringes / needles",
+        "do not open bottles or unknown liquid containers",
+        "do not go into water; avoid culverts and drainage outlets",
+        "keep distance from oil drums; report to leader"
+      ]
+    },
+    {
+      "id": "nelc_litter",
+      "title": "Community clean ups and litter picks",
+      "organization": "North East Lincolnshire Council (UK)",
+      "url": "https://www.nelincs.gov.uk/keeping-our-area-clean-green-and-safe/litter-picks/",
+      "informs": [
+        "gloves and bags as minimum kit",
+        "do not handle clinical waste / needles — note location and inform authority",
+        "avoid deep or fast-flowing water, steep banks, busy roads",
+        "avoid working alone when possible; tell someone your plan"
+      ]
+    },
+    {
+      "id": "nsw_sharps",
+      "title": "Community sharps management — found a sharp in public",
+      "organization": "NSW Health (Australia)",
+      "url": "https://www.health.nsw.gov.au/community-sharps/Pages/default.aspx",
+      "informs": [
+        "if you find a discarded sharp that is not yours, do not touch it",
+        "arrange safe removal via local authority / cleanup service"
+      ]
+    },
+    {
+      "id": "fda_sharps",
+      "title": "DOs and DON'Ts of Proper Sharps Disposal",
+      "organization": "U.S. Food and Drug Administration",
+      "url": "https://www.fda.gov/medical-devices/safely-using-sharps-needles-and-syringes-home-work-and-travel/dos-and-donts-proper-sharps-disposal",
+      "informs": [
+        "do not throw loose sharps in trash or recycling",
+        "do not bend, break, or recap needles used by another person"
+      ]
+    },
+    {
+      "id": "gp_cleanup",
+      "title": "Toolkit: Community Plastic Clean-Up and Brand Audit",
+      "organization": "Greenpeace USA",
+      "url": "https://www.greenpeace.org/usa/community-plastic-clean-up/",
+      "informs": [
+        "protective gloves required",
+        "separate collection containers when possible",
+        "do not collect sharps; leave uncomfortable items and alert the group",
+        "adult supervision when children/youth participate"
+      ]
+    },
+    {
+      "id": "wb_id_plastic",
+      "title": "Plastic Waste Discharges from Rivers and Coastlines in Indonesia",
+      "organization": "World Bank",
+      "url": "https://www.worldbank.org/en/country/indonesia/publication/plastic-waste-discharges-from-rivers-and-coastlines-in-indonesia",
+      "informs": [
+        "Indonesia river/coast plastic leakage context",
+        "rivers and drainage are major pathways for plastic to the sea",
+        "periodical removal from drainage helps prevent plastic reaching rivers"
+      ]
+    },
+    {
+      "id": "unep_icc",
+      "title": "Global Community Science Beach Cleanup Guidelines",
+      "organization": "UNEP / Global Partnership on Marine Litter / Ocean Conservancy",
+      "url": "https://wedocs.unep.org/handle/20.500.11822/42543",
+      "informs": [
+        "citizen science cleanup + counting/monitoring plastic items",
+        "before/after documentation supports measurable action"
+      ]
+    }
+  ],
+  "parts": [
+    { "id": "bottle", "samPhrase": "plastic bottle", "requiredForDemo": true },
+    { "id": "bag", "samPhrase": "plastic bag", "requiredForDemo": true },
+    { "id": "pile", "samPhrase": "trash pile" },
+    { "id": "bank_litter", "samPhrase": "river bank litter" },
+    { "id": "drain_clog", "samPhrase": "litter at drain grate" }
+  ],
+  "questions": [
+    {
+      "id": "q_city",
+      "text": "Which city or neighborhood is this in?",
+      "expects": "short_text",
+      "mapsToEvidence": "city",
+      "sourceIds": ["wb_id_plastic"]
+    },
+    {
+      "id": "q_hours",
+      "text": "How much time can you spend this week?",
+      "expects": "enum",
+      "options": ["under_1h", "1_to_2h", "half_day"],
+      "mapsToEvidence": "hours_available",
+      "sourceIds": ["oc_toolkit"]
+    },
+    {
+      "id": "q_friends",
+      "text": "Will friends or an adult join you (not working alone if the site is near water or a road)?",
+      "expects": "yes_no",
+      "mapsToEvidence": "has_friends",
+      "sourceIds": ["nelc_litter", "gp_cleanup"]
+    },
+    {
+      "id": "q_gloves",
+      "text": "Do you have sturdy work/gardening gloves and bags or buckets (or can you get them)?",
+      "expects": "yes_no",
+      "mapsToEvidence": "has_gloves_bags",
+      "sourceIds": ["oc_toolkit", "gp_cleanup", "nelc_litter"]
+    },
+    {
+      "id": "q_near_water",
+      "text": "Is the litter next to a river, canal, shore, or drain with water?",
+      "expects": "yes_no",
+      "mapsToEvidence": "near_water",
+      "sourceIds": ["wb_id_plastic", "hk_epd_safety", "nelc_litter"]
+    },
+    {
+      "id": "q_hazard",
+      "text": "Do you see needles/syringes, other medical waste, oil drums, chemical containers, or strong chemical smells?",
+      "expects": "yes_no",
+      "mapsToEvidence": "hazard_seen",
+      "sourceIds": ["hk_epd_safety", "nsw_sharps", "nelc_litter", "fda_sharps"]
+    }
+  ],
+  "actions": [
+    {
+      "id": "act_photo_map",
+      "title": "Document litter hotspots (before photos + counts)",
+      "steps": [
+        "In daylight, take clear before photos of each hotspot and note landmarks",
+        "If safe, count visible plastic items (bottles, bags, fragments) for a simple before metric",
+        "Do not touch unknown containers, oil drums, or anything that looks like medical waste"
+      ],
+      "materials": ["phone camera", "notebook or notes app"],
+      "durationMinutes": 20,
+      "sourceIds": ["unep_icc", "hk_epd_safety", "wb_id_plastic"]
+    },
+    {
+      "id": "act_buddy_cleanup",
+      "title": "Daylight buddy cleanup (ordinary litter only)",
+      "steps": [
+        "Meet in daylight with at least one buddy; tell an adult where you are going",
+        "Wear closed-toe shoes and sturdy gloves; bring water and a basic first-aid kit if possible",
+        "Use gloves or tongs — never bare hands; keep hands away from face until gloves are off and hands washed",
+        "Collect only ordinary plastic and trash you can clearly identify",
+        "Use separate bags/buckets for recyclables vs residual waste when your area allows",
+        "Leave needles, syringes, medical waste, oil drums, and unknown chemicals in place — note the location and tell an adult or local authority",
+        "Take after photos and record bags collected / approximate item counts"
+      ],
+      "materials": [
+        "sturdy gloves",
+        "trash bags or buckets",
+        "closed-toe shoes",
+        "water bottle",
+        "hand sanitizer or soap access",
+        "optional: litter picker / tongs",
+        "optional: first-aid kit"
+      ],
+      "durationMinutes": 90,
+      "needsFriends": true,
+      "forbiddenIf": ["hazard_seen", "no_gloves"],
+      "sourceIds": ["oc_toolkit", "hk_epd_safety", "nelc_litter", "gp_cleanup", "unep_icc"]
+    },
+    {
+      "id": "act_drain_clear_safe",
+      "title": "Safe drain-adjacent litter pickup (dry ground only)",
+      "steps": [
+        "Stay on dry, stable ground — do not enter flowing water, culverts, or drainage outlets",
+        "With gloves, remove only loose ordinary litter around the grate that you can reach safely",
+        "Never put hands into drains, cavities, or deep openings",
+        "Skip the site if banks are steep/slippery, water is fast, or traffic is busy without an adult",
+        "Bag waste for proper disposal; note that clearing drainage litter helps keep plastic out of rivers"
+      ],
+      "materials": ["sturdy gloves", "trash bags or buckets", "closed-toe shoes"],
+      "durationMinutes": 45,
+      "forbiddenIf": ["hazard_seen", "fast_water"],
+      "sourceIds": ["hk_epd_safety", "nelc_litter", "wb_id_plastic", "nsw_sharps"]
+    },
+    {
+      "id": "act_invite_card",
+      "title": "Invite friends for a supervised practice cleanup",
+      "steps": [
+        "Share the Iklim PAL invite card with 2–5 friends",
+        "Agree on daylight time, meeting point, who brings gloves/bags, and an adult contact",
+        "Brief everyone: gloves on, no bare hands, no medical/chemical waste, no entering water",
+        "Keep the message about community cleanup practice — not politics"
+      ],
+      "materials": ["share card image", "gloves plan", "bags/buckets plan"],
+      "durationMinutes": 15,
+      "needsFriends": true,
+      "sourceIds": ["gp_cleanup", "nelc_litter", "oc_toolkit"]
+    }
+  ],
+  "stopConditions": [
+    {
+      "id": "stop_hazard",
+      "when": "hazard_seen",
+      "escalate": true,
+      "userMessage": "Stop DIY cleanup. Do not touch needles, syringes, medical waste, oil drums, or unknown chemical containers. Note the location and tell an adult or local authority so trained people can remove them safely.",
+      "sourceIds": ["nsw_sharps", "fda_sharps", "hk_epd_safety", "nelc_litter"]
+    },
+    {
+      "id": "stop_fast_water",
+      "when": "fast_water_or_flood",
+      "escalate": true,
+      "userMessage": "Do not enter flood water, fast-flowing water, or unstable banks. Reschedule or ask adults/authorities for help.",
+      "sourceIds": ["nelc_litter", "hk_epd_safety"]
+    },
+    {
+      "id": "stop_night_road",
+      "when": "night_roadside",
+      "escalate": true,
+      "userMessage": "Skip night or busy roadside cleanups without an adult and proper safety setup. Reschedule for daylight away from traffic risk.",
+      "sourceIds": ["nelc_litter", "hk_epd_safety"]
+    },
+    {
+      "id": "stop_out_of_scope",
+      "when": "no_pack_match",
+      "escalate": true,
+      "userMessage": "Iklim PAL only covers safe youth plastic/river/drain litter actions in this pack. We could not match a pack-approved next step for your case. Do not invent DIY beyond this guide — ask an adult, teacher, or local authority for help, and stay away from hazards.",
+      "sourceIds": ["nelc_litter", "hk_epd_safety", "nsw_sharps"]
+    }
+  ],
+  "escalationDefaults": {
+    "message": "This needs an adult or local authority — not a youth DIY cleanup. Keep yourself and friends away from the hazard.",
+    "nextStep": "contact_adult_or_authority",
+    "sourceIds": ["nsw_sharps", "nelc_litter", "hk_epd_safety"]
+  }
+}

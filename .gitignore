@@ -10,3 +10,4 @@ coverage/
 *.tsbuildinfo
 uploads/
 .vite/
+apps/api/scripts/smoke-meta-last.json

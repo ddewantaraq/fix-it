@@ -16,5 +16,6 @@ export function getSupabase(): SupabaseClient {
 export const BUCKETS = {
   photos: "session-photos",
   masks: "session-masks",
-  overlays: "session-overlays",
+  shareCards: "session-share-cards",
+  voice: "session-voice",
 } as const;

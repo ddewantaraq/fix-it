@@ -1,0 +1,11 @@
+{
+  "name": "@iklim-pal/action-packs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./plastic_litter_id_v1.json",
+  "exports": {
+    "./plastic_litter_id_v1.json": "./plastic_litter_id_v1.json",
+    ".": "./plastic_litter_id_v1.json"
+  }
+}

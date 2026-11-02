@@ -104,9 +104,38 @@ pre {
   gap: 0.5rem;
 }
 
-.err {
+.err,
+.error {
   color: #9b1c1c;
   white-space: pre-wrap;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+}
+
+input,
+textarea {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.block {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.hint {
+  color: #5a5348;
+  font-size: 0.9rem;
 }
 
 img.preview {

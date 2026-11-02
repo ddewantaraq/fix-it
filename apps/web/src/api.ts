@@ -1,44 +1,51 @@
-import type { AgentStepResponse } from "@fix-it/shared";
+import type { AgentStepResponse, SessionDetail } from "@iklim-pal/shared";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
+const base = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
 
-async function parseJson<T>(res: Response): Promise<T> {
-  const data = await res.json();
+async function json<T>(res: Response): Promise<T> {
+  const body = await res.json();
   if (!res.ok) {
-    throw new Error(
-      typeof data?.error === "string" ? data.error : `HTTP ${res.status}`,
-    );
+    throw new Error(body.error ?? res.statusText);
   }
-  return data as T;
+  return body as T;
 }
 
-export async function createSession() {
-  const res = await fetch(`${API_BASE}/sessions`, {
+export async function createSession(city: string, concernText: string) {
+  const res = await fetch(`${base}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      devicePackId: "household_fan_v1",
-      symptom: "wont_turn_on",
+      actionPackId: "plastic_litter_id_v1",
+      city,
+      concernText,
     }),
   });
-  return parseJson<{ id: string; status: string }>(res);
+  return json<{ id: string }>(res);
 }
 
 export async function uploadPhoto(sessionId: string, file: File) {
-  const form = new FormData();
-  form.append("photo", file);
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/photo`, {
+  const fd = new FormData();
+  fd.append("photo", file);
+  const res = await fetch(`${base}/sessions/${sessionId}/photo`, {
     method: "POST",
-    body: form,
+    body: fd,
   });
-  return parseJson<{ id: string; photoPath: string; status: string }>(res);
+  return json<{ ok: boolean; photoPath: string }>(res);
+}
+
+export async function uploadVoice(sessionId: string, file: File) {
+  const fd = new FormData();
+  fd.append("audio", file);
+  const res = await fetch(`${base}/sessions/${sessionId}/voice`, {
+    method: "POST",
+    body: fd,
+  });
+  return json<{ ok: boolean; transcript: string }>(res);
 }
 
 export async function runStep(sessionId: string) {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/step`, {
-    method: "POST",
-  });
-  return parseJson<AgentStepResponse>(res);
+  const res = await fetch(`${base}/sessions/${sessionId}/step`, { method: "POST" });
+  return json<AgentStepResponse>(res);
 }
 
 export async function submitAnswer(
@@ -46,36 +53,24 @@ export async function submitAnswer(
   questionId: string,
   value: string | boolean,
 ) {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/answers`, {
+  const res = await fetch(`${base}/sessions/${sessionId}/answers`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ questionId, value }),
   });
-  return parseJson<AgentStepResponse>(res);
+  return json<AgentStepResponse>(res);
 }
 
-export async function submitCheck(
-  sessionId: string,
-  checkId: string,
-  outcome: "pass" | "fail" | "unclear" | "skipped",
-  unpluggedAcknowledged: boolean,
-) {
-  const res = await fetch(
-    `${API_BASE}/sessions/${sessionId}/checks/${checkId}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outcome, unpluggedAcknowledged }),
-    },
-  );
-  return parseJson<AgentStepResponse>(res);
+export async function acceptAction(sessionId: string, actionId: string) {
+  const res = await fetch(`${base}/sessions/${sessionId}/actions/${actionId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accept: true }),
+  });
+  return json<AgentStepResponse>(res);
 }
 
 export async function getSession(sessionId: string) {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}`);
-  return parseJson<{
-    session: { photoUrl?: string | null; status: string };
-    brief?: unknown;
-    evidence: unknown[];
-  }>(res);
+  const res = await fetch(`${base}/sessions/${sessionId}`);
+  return json<SessionDetail>(res);
 }

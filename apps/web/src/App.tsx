@@ -1,23 +1,26 @@
 import { useMemo, useState } from "react";
-import type { AgentStepResponse } from "@fix-it/shared";
+import type { AgentStepResponse } from "@iklim-pal/shared";
 import {
+  acceptAction,
   createSession,
   getSession,
   runStep,
   submitAnswer,
-  submitCheck,
   uploadPhoto,
 } from "./api";
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [city, setCity] = useState("Bandung");
+  const [concern, setConcern] = useState(
+    "Plastic bags and bottles along the riverbank near my neighborhood.",
+  );
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [step, setStep] = useState<AgentStepResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answerValue, setAnswerValue] = useState("");
-  const [unpluggedAck, setUnpluggedAck] = useState(false);
 
   const photoObjectUrl = useMemo(() => {
     if (!file) return null;
@@ -28,8 +31,9 @@ export function App() {
     setError(null);
     setBusy(true);
     try {
-      if (!file) throw new Error("Choose a fan photo first");
-      const session = await createSession();
+      if (!file) throw new Error("Choose a litter photo first");
+      if (!city.trim() || !concern.trim()) throw new Error("City and concern required");
+      const session = await createSession(city.trim(), concern.trim());
       setSessionId(session.id);
       await uploadPhoto(session.id, file);
       const detail = await getSession(session.id);
@@ -63,17 +67,12 @@ export function App() {
     }
   }
 
-  async function onCheck(outcome: "pass" | "fail" | "unclear") {
-    if (!sessionId || !step?.ui.safeCheck) return;
+  async function onAcceptAction() {
+    if (!sessionId || !step?.ui.proposedAction) return;
     setBusy(true);
     setError(null);
     try {
-      const next = await submitCheck(
-        sessionId,
-        step.ui.safeCheck.id,
-        outcome,
-        unpluggedAck,
-      );
+      const next = await acceptAction(sessionId, step.ui.proposedAction.id);
       setStep(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -98,16 +97,29 @@ export function App() {
 
   return (
     <main>
-      <h1>FixIt Vision</h1>
+      <h1>Iklim PAL</h1>
       <p className="sub">
-        Household fan · won’t turn on · guided safe checks (not a diagnosis)
+        Local climate action planner for youth — litter photo → safe, measurable plan
+        (not a chatbot lecture)
       </p>
 
       <section className="panel">
         <h2>1. Capture</h2>
+        <label>
+          City / neighborhood
+          <input value={city} onChange={(e) => setCity(e.target.value)} />
+        </label>
+        <label>
+          Concern
+          <textarea
+            rows={3}
+            value={concern}
+            onChange={(e) => setConcern(e.target.value)}
+          />
+        </label>
         <div className="row">
           <label className="file">
-            Choose photo
+            Choose litter photo
             <input
               type="file"
               accept="image/*"
@@ -119,147 +131,144 @@ export function App() {
               }}
             />
           </label>
-          <button type="button" disabled={busy || !file} onClick={onStart}>
-            Start session + first step
+          <button disabled={busy || !file} onClick={onStart}>
+            Start
           </button>
         </div>
         {(previewUrl || photoObjectUrl) && (
-          <p>
-            <img
-              className="preview"
-              src={previewUrl ?? photoObjectUrl ?? undefined}
-              alt="Fan upload preview"
-            />
-          </p>
+          <img
+            className="preview"
+            src={previewUrl ?? photoObjectUrl ?? undefined}
+            alt="Litter concern"
+          />
         )}
-        {sessionId && <p>Session: {sessionId}</p>}
       </section>
 
-      {error && (
-        <section className="panel">
-          <p className="err">{error}</p>
-        </section>
-      )}
+      {error && <p className="error">{error}</p>}
+      {busy && <p>Working…</p>}
 
       {step && (
-        <section className={`panel ${step.escalated ? "escalate" : ""}`}>
-          <h2>2. Agent step · {step.status}</h2>
-          <p>{step.assistantMessage}</p>
-
-          {step.ui.hypotheses.length > 0 && (
-            <div>
-              <strong>Possible causes (unconfirmed)</strong>
-              {step.ui.hypotheses.map((h) => (
-                <div className="hypo" key={h.label}>
-                  {h.label} · confidence {h.confidence}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {step.ui.masks.length > 0 && (
-            <div className="mask-list">
-              <strong>SAM evidence artifacts</strong>
-              {step.ui.masks.map((m) => (
-                <div key={m.partId}>
-                  Part <code>{m.partId}</code>:{" "}
-                  <a href={m.url} target="_blank" rel="noreferrer">
-                    mask JSON
-                  </a>
-                </div>
-              ))}
-              <button type="button" className="secondary" disabled={busy} onClick={onContinue}>
-                Continue next step
-              </button>
-            </div>
-          )}
-
-          {step.ui.question && (
-            <div>
-              <h3>Question</h3>
-              <p>{step.ui.question.text}</p>
-              {step.ui.question.options?.length ? (
-                <div className="row">
-                  {step.ui.question.options.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setAnswerValue(opt);
-                      }}
-                    >
-                      {opt}
-                    </button>
+        <>
+          <section className="panel">
+            <h2>2. Guide</h2>
+            <p>{step.assistantMessage}</p>
+            <p>
+              Status: <code>{step.status}</code>
+              {step.escalated ? " · ESCALATED" : ""}
+            </p>
+            {step.ui.masks.length > 0 && (
+              <div className="masks">
+                <h3>SAM masks / evidence</h3>
+                <ul>
+                  {step.ui.masks.map((m) => (
+                    <li key={m.partId + m.url}>
+                      <code>{m.partId}</code> —{" "}
+                      <a href={m.url} target="_blank" rel="noreferrer">
+                        open
+                      </a>
+                    </li>
                   ))}
-                </div>
-              ) : (
+                </ul>
+              </div>
+            )}
+
+            {step.ui.question && (
+              <div className="block">
+                <h3>Question</h3>
+                <p>{step.ui.question.text}</p>
+                {step.ui.question.options && (
+                  <p className="hint">Options: {step.ui.question.options.join(", ")}</p>
+                )}
                 <div className="row">
-                  <button type="button" disabled={busy} onClick={() => setAnswerValue("yes")}>
-                    Yes
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => setAnswerValue("no")}>
-                    No
+                  <input
+                    value={answerValue}
+                    placeholder={
+                      step.ui.question.expects === "yes_no" ? "yes / no" : "answer"
+                    }
+                    onChange={(e) => setAnswerValue(e.target.value)}
+                  />
+                  <button disabled={busy || !answerValue} onClick={onAnswer}>
+                    Submit answer
                   </button>
                 </div>
-              )}
-              <div className="row" style={{ marginTop: "0.75rem" }}>
-                <input
-                  value={answerValue}
-                  onChange={(e) => setAnswerValue(e.target.value)}
-                  placeholder="Selected / typed answer"
-                />
-                <button type="button" disabled={busy || !answerValue} onClick={onAnswer}>
-                  Submit answer
+              </div>
+            )}
+
+            {step.ui.proposedAction && (
+              <div className="block">
+                <h3>Proposed action</h3>
+                <p>
+                  <strong>{step.ui.proposedAction.title}</strong> (
+                  {step.ui.proposedAction.durationMinutes} min)
+                </p>
+                <ol>
+                  {step.ui.proposedAction.steps.map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ol>
+                <button disabled={busy} onClick={onAcceptAction}>
+                  Accept action
                 </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {step.ui.safeCheck && (
-            <div>
-              <h3>{step.ui.safeCheck.title}</h3>
+            {!step.ui.question && !step.ui.proposedAction && !step.ui.plan && (
+              <button disabled={busy} onClick={onContinue}>
+                Continue
+              </button>
+            )}
+          </section>
+
+          {step.ui.plan && (
+            <section className="panel">
+              <h2>3. Action Plan</h2>
+              <p>
+                <strong>{step.ui.plan.goal}</strong>
+              </p>
+              <p>
+                Recommendation: <code>{step.ui.plan.recommendation}</code>
+              </p>
+              <ol>
+                {step.ui.plan.steps.map((s) => (
+                  <li key={s.order}>
+                    <strong>{s.title}</strong> — {s.detail} ({s.owner}, {s.timeboxMinutes}
+                    m)
+                  </li>
+                ))}
+              </ol>
+              <h3>Materials</h3>
               <ul>
-                {step.ui.safeCheck.instructions.map((line) => (
-                  <li key={line}>{line}</li>
+                {step.ui.plan.materials.map((m) => (
+                  <li key={m}>{m}</li>
                 ))}
               </ul>
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={unpluggedAck}
-                  onChange={(e) => setUnpluggedAck(e.target.checked)}
-                />
-                I confirm the fan is unplugged
-              </label>
-              <div className="row">
-                <button type="button" disabled={busy} onClick={() => onCheck("pass")}>
-                  Check done / pass
-                </button>
-                <button type="button" disabled={busy} onClick={() => onCheck("fail")}>
-                  Issue found
-                </button>
-                <button type="button" disabled={busy} onClick={() => onCheck("unclear")}>
-                  Unclear
-                </button>
-              </div>
-            </div>
+              <h3>Safety</h3>
+              <ul>
+                {step.ui.plan.safetyNotes.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+              <h3>Measure</h3>
+              <ul>
+                {step.ui.plan.measureHow.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+              <h3>Uncertainty</h3>
+              <ul>
+                {step.ui.plan.uncertainty.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+              {step.ui.shareCardUrl && (
+                <div>
+                  <h3>Share card</h3>
+                  <img className="preview" src={step.ui.shareCardUrl} alt="Share card" />
+                </div>
+              )}
+            </section>
           )}
-
-          {step.ui.brief && (
-            <div>
-              <h3>Repair brief</h3>
-              <p>
-                Recommendation: <strong>{step.ui.brief.recommendation}</strong>
-              </p>
-              <p>{step.ui.brief.technicianNotes}</p>
-              <p>
-                Uncertainty: {step.ui.brief.uncertainty.join(", ") || "(none listed)"}
-              </p>
-              <pre>{JSON.stringify(step.ui.brief, null, 2)}</pre>
-            </div>
-          )}
-        </section>
+        </>
       )}
     </main>
   );

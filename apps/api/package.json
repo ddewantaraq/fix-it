@@ -1,5 +1,5 @@
 {
-  "name": "@fix-it/api",
+  "name": "@iklim-pal/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "smoke:meta": "tsx scripts/smoke-meta.ts"
   },
   "dependencies": {
-    "@fix-it/device-packs": "*",
-    "@fix-it/shared": "*",
+    "@iklim-pal/action-packs": "*",
+    "@iklim-pal/shared": "*",
     "@supabase/supabase-js": "^2.49.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

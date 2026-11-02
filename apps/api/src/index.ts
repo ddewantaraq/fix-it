@@ -1,8 +1,7 @@
-import express from "express";
 import cors from "cors";
+import express from "express";
 import { env } from "./env.js";
 import { router } from "./routes.js";
-import { loadFanPack } from "./pack.js";
 
 const app = express();
 app.use(
@@ -13,10 +12,6 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use(router);
 
-// Validate pack at boot
-loadFanPack();
-
 app.listen(env.API_PORT, () => {
-  console.log(`FixIt API listening on http://localhost:${env.API_PORT}`);
-  console.log(`CORS origin: ${env.WEB_ORIGIN}`);
+  console.log(`Iklim PAL API listening on http://localhost:${env.API_PORT}`);
 });

@@ -1,16 +1,16 @@
 {
-  "name": "fix-it",
+  "name": "iklim-pal",
   "private": true,
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "prepare": "npm run build -w @fix-it/shared",
-    "dev:api": "npm run dev -w @fix-it/api",
-    "dev:web": "npm run dev -w @fix-it/web",
-    "build": "npm run build -w @fix-it/shared && npm run build -w @fix-it/api && npm run build -w @fix-it/web",
-    "smoke:meta": "npm run smoke:meta -w @fix-it/api"
+    "prepare": "npm run build -w @iklim-pal/shared",
+    "dev:api": "npm run dev -w @iklim-pal/api",
+    "dev:web": "npm run dev -w @iklim-pal/web",
+    "build": "npm run build -w @iklim-pal/shared && npm run build -w @iklim-pal/api && npm run build -w @iklim-pal/web",
+    "smoke:meta": "npm run smoke:meta -w @iklim-pal/api"
   },
   "engines": {
     "node": ">=20"
