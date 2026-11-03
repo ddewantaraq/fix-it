@@ -10,7 +10,10 @@
     "dev:api": "npm run dev -w @iklim-pal/api",
     "dev:web": "npm run dev -w @iklim-pal/web",
     "build": "npm run build -w @iklim-pal/shared && npm run build -w @iklim-pal/api && npm run build -w @iklim-pal/web",
-    "smoke:meta": "npm run smoke:meta -w @iklim-pal/api"
+    "smoke:meta": "npm run smoke:meta -w @iklim-pal/api",
+    "e2e:real": "npm run e2e:real -w @iklim-pal/api",
+    "test:safety": "npm run test:safety -w @iklim-pal/api",
+    "test:quality": "npm run test:quality -w @iklim-pal/api"
   },
   "engines": {
     "node": ">=20"

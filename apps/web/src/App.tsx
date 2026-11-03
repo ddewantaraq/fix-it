@@ -7,6 +7,7 @@ import {
   runStep,
   submitAnswer,
   uploadPhoto,
+  uploadVoice,
 } from "./api";
 
 export function App() {
@@ -16,11 +17,13 @@ export function App() {
     "Plastic bags and bottles along the riverbank near my neighborhood.",
   );
   const [file, setFile] = useState<File | null>(null);
+  const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [step, setStep] = useState<AgentStepResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answerValue, setAnswerValue] = useState("");
+  const [transcript, setTranscript] = useState<string | null>(null);
 
   const photoObjectUrl = useMemo(() => {
     if (!file) return null;
@@ -32,10 +35,16 @@ export function App() {
     setBusy(true);
     try {
       if (!file) throw new Error("Choose a litter photo first");
-      if (!city.trim() || !concern.trim()) throw new Error("City and concern required");
-      const session = await createSession(city.trim(), concern.trim());
+      if (!city.trim()) throw new Error("City required");
+      if (!concern.trim() && !voiceFile) throw new Error("Concern text or voice clip required");
+      const session = await createSession(city.trim(), concern.trim() || "(from voice)");
       setSessionId(session.id);
       await uploadPhoto(session.id, file);
+      if (voiceFile) {
+        const v = await uploadVoice(session.id, voiceFile);
+        setTranscript(v.transcript);
+        if (v.transcript) setConcern(v.transcript);
+      }
       const detail = await getSession(session.id);
       setPreviewUrl(detail.session.photoUrl ?? photoObjectUrl);
       const next = await runStep(session.id);
@@ -128,6 +137,17 @@ export function App() {
                 setFile(f);
                 setStep(null);
                 setSessionId(null);
+                setTranscript(null);
+              }}
+            />
+          </label>
+          <label className="file">
+            Optional voice concern
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={(e) => {
+                setVoiceFile(e.target.files?.[0] ?? null);
               }}
             />
           </label>
@@ -135,6 +155,11 @@ export function App() {
             Start
           </button>
         </div>
+        {transcript && (
+          <p className="hint">
+            Voice transcript: <em>{transcript}</em>
+          </p>
+        )}
         {(previewUrl || photoObjectUrl) && (
           <img
             className="preview"

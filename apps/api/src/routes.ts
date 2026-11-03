@@ -11,19 +11,26 @@ import {
   recordAnswer,
   runAgentStep,
 } from "./agent.js";
+import {
+  createSession,
+  getStoreMode,
+  insertEvidence,
+  updateSession,
+  uploadBlob,
+  upsertActionPack,
+} from "./db.js";
 import { transcribeVoice } from "./meta/client.js";
 import { loadActionPack } from "./pack.js";
-import { BUCKETS, getSupabase } from "./supabase.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: 15 * 1024 * 1024 },
 });
 
 export const router = Router();
 
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "iklim-pal-api" });
+  res.json({ ok: true, service: "iklim-pal-api", store: getStoreMode() });
 });
 
 router.get("/packs/plastic_litter_id_v1", (_req, res) => {
@@ -33,28 +40,16 @@ router.get("/packs/plastic_litter_id_v1", (_req, res) => {
 router.post("/sessions", async (req, res) => {
   try {
     const body = CreateSessionBodySchema.parse(req.body ?? {});
-    const sb = getSupabase();
     const pack = loadActionPack();
+    await upsertActionPack(pack);
 
-    await sb.from("action_packs").upsert({
-      id: "plastic_litter_id_v1",
-      version: "1",
-      json: pack,
-      updated_at: new Date().toISOString(),
+    const data = await createSession({
+      action_pack_id: body.actionPackId,
+      concern_text: body.concernText,
+      city: body.city,
+      status: "collecting",
     });
 
-    const { data, error } = await sb
-      .from("sessions")
-      .insert({
-        action_pack_id: body.actionPackId,
-        concern_text: body.concernText,
-        city: body.city,
-        status: "collecting",
-      })
-      .select("*")
-      .single();
-
-    if (error) throw new Error(error.message);
     res.status(201).json({
       id: data.id,
       actionPackId: data.action_pack_id,
@@ -74,7 +69,6 @@ router.post("/sessions/:id/photo", upload.single("photo"), async (req, res) => {
     const sessionId = req.params.id;
     if (!req.file) throw new Error("photo file required (multipart field: photo)");
 
-    const sb = getSupabase();
     const ext =
       req.file.mimetype === "image/png"
         ? "png"
@@ -82,21 +76,12 @@ router.post("/sessions/:id/photo", upload.single("photo"), async (req, res) => {
           ? "webp"
           : "jpg";
     const path = `${sessionId}/photo.${ext}`;
-    const { error: upErr } = await sb.storage.from(BUCKETS.photos).upload(path, req.file.buffer, {
-      contentType: req.file.mimetype,
-      upsert: true,
-    });
-    if (upErr) throw new Error(upErr.message);
+    await uploadBlob("photos", path, req.file.buffer, req.file.mimetype);
 
-    const { error } = await sb
-      .from("sessions")
-      .update({
-        photo_path: path,
-        status: "inspecting",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", sessionId);
-    if (error) throw new Error(error.message);
+    await updateSession(sessionId, {
+      photo_path: path,
+      status: "inspecting",
+    });
 
     res.json({ ok: true, photoPath: path });
   } catch (err) {
@@ -109,12 +94,13 @@ router.post("/sessions/:id/voice", upload.single("audio"), async (req, res) => {
     const sessionId = req.params.id;
     if (!req.file) throw new Error("audio file required (multipart field: audio)");
 
-    const sb = getSupabase();
     const path = `${sessionId}/concern.wav`;
-    await sb.storage.from(BUCKETS.voice).upload(path, req.file.buffer, {
-      contentType: req.file.mimetype || "audio/wav",
-      upsert: true,
-    });
+    await uploadBlob(
+      "voice",
+      path,
+      req.file.buffer,
+      req.file.mimetype || "audio/wav",
+    );
 
     const { text } = await transcribeVoice({
       audio: req.file.buffer,
@@ -122,16 +108,12 @@ router.post("/sessions/:id/voice", upload.single("audio"), async (req, res) => {
       mime: req.file.mimetype || "audio/wav",
     });
 
-    await sb
-      .from("sessions")
-      .update({
-        voice_path: path,
-        concern_text: text,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", sessionId);
+    await updateSession(sessionId, {
+      voice_path: path,
+      concern_text: text,
+    });
 
-    await sb.from("evidence_items").insert({
+    await insertEvidence({
       session_id: sessionId,
       kind: "voice_transcript",
       payload: { text },
@@ -180,7 +162,6 @@ router.post("/sessions/:id/actions/:actionId", async (req, res) => {
 
 router.post("/sessions/:id/finalize", async (req, res) => {
   try {
-    // Force planner toward finalize by running step; client may call after answers.
     const step = await runAgentStep(req.params.id);
     res.json(step);
   } catch (err) {

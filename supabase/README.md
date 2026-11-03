@@ -1,19 +1,18 @@
 # Supabase setup — Iklim PAL
 
-1. Create a Supabase project.
-2. Run [`migrations/002_iklim_pal.sql`](migrations/002_iklim_pal.sql) in the SQL editor (preferred for new projects).
-3. Create storage buckets:
+## Remote project (preferred for production demo)
+
+1. Open SQL editor for your project.
+2. Paste and run [`migrations/001_iklim_pal.sql`](migrations/001_iklim_pal.sql) (same content as `002_iklim_pal.sql`).
+3. Create storage buckets (API can also create them):
    - `session-photos`
    - `session-masks`
    - `session-share-cards`
    - `session-voice`
 4. Put URL + service role key in repo-root `.env`.
-5. Seed pack FK (API also upserts on session create):
 
-```sql
-insert into public.action_packs (id, version, json)
-values ('plastic_litter_id_v1', '1', '{"id":"plastic_litter_id_v1"}'::jsonb)
-on conflict (id) do nothing;
-```
+Until the SQL migration is applied, the API **auto-falls back** to a local JSON store under `.data/` while still using Supabase Storage when buckets exist, and always calling real Meta Muse models.
 
-If you previously applied `001_init.sql` (fan schema), prefer a fresh project or drop old `device_packs` / `repair_briefs` tables before applying `002_iklim_pal.sql`.
+## Deprecated
+
+`migrations/archive/001_init_fan_deprecated.sql` is the old FixIt/fan schema — do not apply.

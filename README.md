@@ -4,7 +4,9 @@ Local climate **action planner** for young people (Meta Global AI Developer Hack
 
 Turn a neighborhood litter concern (photo + city + text) into a **pack-approved, safety-bounded, measurable Action Plan** — not a climate lecture, not a political tool, not a one-shot image captioner.
 
-See [`architecture.md`](architecture.md), [`task.md`](task.md), and [`docs/anti-project.md`](docs/anti-project.md).
+**How to use the app:** [`INSTRUCTIONS.md`](INSTRUCTIONS.md)
+
+Also see [`architecture.md`](architecture.md), [`task.md`](task.md), [`docs/anti-project.md`](docs/anti-project.md), and [`docs/demo-script.md`](docs/demo-script.md).
 
 ## Muse models used
 
@@ -16,7 +18,7 @@ See [`architecture.md`](architecture.md), [`task.md`](task.md), and [`docs/anti-
 | `muse-image-1.0` | Share / invite card |
 | `muse-voice-transcribe-1.0` | Optional spoken concern (P1) |
 
-**No RAG. No fine-tuning.** Domain knowledge lives in [`packages/action-packs/plastic_litter_id_v1.json`](packages/action-packs/plastic_litter_id_v1.json), curated from cited sources (see [`docs/pack-sources.md`](docs/pack-sources.md)) — not runtime fetch.
+**No RAG. No fine-tuning.** Domain knowledge lives in [`packages/action-packs/plastic_litter_id_v1.json`](packages/action-packs/plastic_litter_id_v1.json) (sources: [`docs/pack-sources.md`](docs/pack-sources.md)).
 
 ## Stack
 
@@ -24,7 +26,7 @@ See [`architecture.md`](architecture.md), [`task.md`](task.md), and [`docs/anti-
 - `apps/api` — Node + Express
 - `packages/shared` — Zod schemas + `/step` contract
 - `packages/action-packs` — litter Action Pack
-- Supabase — sessions, evidence, storage
+- Supabase Storage (+ tables when migrated); local JSON fallback under `.data/` if SQL not applied yet
 
 ## Setup
 
@@ -33,16 +35,35 @@ cp .env.example .env
 # fill MODEL_API_KEY + SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
 npm install
-# apply supabase/migrations/002_iklim_pal.sql and create storage buckets (see supabase/README.md)
+
+# Optional but recommended: apply supabase/migrations/001_iklim_pal.sql in the SQL editor
+# Storage buckets session-photos / session-masks / session-share-cards / session-voice
+# (see supabase/README.md). Until SQL is applied, API uses local JSON + Storage when available.
 
 npm run dev:api
 npm run dev:web
 ```
 
+Open `http://localhost:5173` (or your Vite port). Upload a **real** fixture from `fixtures/litter/*/photo.png`.
+
+## Local verify
+
 ```bash
-npm run smoke:meta   # Spark + SAM + Wonder
+npm run smoke:meta      # cheap API-key check (tiny PNG) — not product E2E
+npm run test:safety
+npm run test:quality
+
+# with API running:
+npm run e2e:real        # REAL S2 + S4 litter photos → real Muse agent
 ```
+
+**Pass criteria:** S2 reaches `done` with an Action Plan; S4 escalates on hazard.
 
 ## Fixtures
 
-Drop staged photos into `fixtures/litter/S1_street_bottles` … `S4_hazard_escalate` (see task.md). Expected-plan JSON stubs are included for S2/S4.
+Real photos (already in repo; also copied to stable `photo.png` names):
+
+- `fixtures/litter/S1_street_bottles/photo.png`
+- `fixtures/litter/S2_riverbank_bags/photo.png` (hero)
+- `fixtures/litter/S3_drain_clog/photo.png`
+- `fixtures/litter/S4_hazard_escalate/photo.png`

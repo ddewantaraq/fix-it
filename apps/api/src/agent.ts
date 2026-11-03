@@ -6,7 +6,18 @@ import {
   type AgentStepResponse,
   type PlannerAction,
 } from "@iklim-pal/shared";
-import { randomUUID } from "node:crypto";
+import {
+  BUCKETS,
+  downloadPhoto,
+  getActionPlan,
+  getSession,
+  insertEvidence as dbInsertEvidence,
+  listEvidence,
+  saveActionPlan,
+  signedUrl,
+  updateSession,
+  uploadBlob,
+} from "./db.js";
 import {
   generateShareCard,
   parseJsonFromModel,
@@ -22,7 +33,6 @@ import {
   isPlannerActionInPack,
   loadActionPack,
 } from "./pack.js";
-import { BUCKETS, getSupabase } from "./supabase.js";
 
 type SessionRow = {
   id: string;
@@ -48,19 +58,9 @@ type EvidenceRow = {
   created_at: string;
 };
 
-async function signedUrl(bucket: string, path: string): Promise<string | null> {
-  const sb = getSupabase();
-  const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 60 * 60);
-  if (error) return null;
-  return data.signedUrl;
-}
-
 async function downloadPhotoDataUrl(photoPath: string): Promise<string> {
-  const sb = getSupabase();
-  const { data, error } = await sb.storage.from(BUCKETS.photos).download(photoPath);
-  if (error || !data) throw new Error(`Photo download failed: ${error?.message}`);
-  const buf = Buffer.from(await data.arrayBuffer());
-  const mime = photoPath.endsWith(".png") ? "image/png" : "image/jpeg";
+  const buf = await downloadPhoto(photoPath);
+  const mime = photoPath.includes(".png") ? "image/png" : "image/jpeg";
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
@@ -99,50 +99,28 @@ function acceptedActionIds(evidence: EvidenceRow[]): Set<string> {
 async function insertEvidence(
   row: Omit<EvidenceRow, "id" | "created_at"> & { id?: string },
 ): Promise<EvidenceRow> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("evidence_items")
-    .insert({
-      id: row.id ?? randomUUID(),
-      session_id: row.session_id,
-      kind: row.kind,
-      part_id: row.part_id,
-      question_id: row.question_id,
-      action_id: row.action_id,
-      payload: row.payload,
-      source: row.source,
-    })
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
+  const data = await dbInsertEvidence({
+    session_id: row.session_id,
+    kind: row.kind,
+    part_id: row.part_id ?? null,
+    question_id: row.question_id ?? null,
+    action_id: row.action_id ?? null,
+    payload: row.payload,
+    source: row.source,
+  });
   return data as EvidenceRow;
 }
 
 async function loadSession(sessionId: string): Promise<SessionRow> {
-  const sb = getSupabase();
-  const { data, error } = await sb.from("sessions").select("*").eq("id", sessionId).single();
-  if (error || !data) throw new Error(error?.message ?? "session not found");
-  return data as SessionRow;
+  return (await getSession(sessionId)) as SessionRow;
 }
 
 async function loadEvidence(sessionId: string): Promise<EvidenceRow[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("evidence_items")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as EvidenceRow[];
+  return (await listEvidence(sessionId)) as EvidenceRow[];
 }
 
 async function setStatus(sessionId: string, status: string) {
-  const sb = getSupabase();
-  const { error } = await sb
-    .from("sessions")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", sessionId);
-  if (error) throw new Error(error.message);
+  await updateSession(sessionId, { status });
 }
 
 function emptyStep(
@@ -347,13 +325,12 @@ async function runSegment(
       phrase: part.samPhrase,
     });
     const maskPath = `${session.id}/${partId}-${Date.now()}.json`;
-    const sb = getSupabase();
-    await sb.storage
-      .from(BUCKETS.masks)
-      .upload(maskPath, Buffer.from(JSON.stringify({ phrase: part.samPhrase, sam: sam.text })), {
-        contentType: "application/json",
-        upsert: true,
-      });
+    await uploadBlob(
+      "masks",
+      maskPath,
+      Buffer.from(JSON.stringify({ phrase: part.samPhrase, sam: sam.text })),
+      "application/json",
+    );
     await insertEvidence({
       session_id: session.id,
       kind: "sam_mask",
@@ -432,7 +409,6 @@ Rules:
     });
     if (card.dataUrl) {
       shareCardPath = `${opts.session.id}/share-${Date.now()}.png`;
-      const sb = getSupabase();
       let buf: Buffer;
       if (card.dataUrl.startsWith("data:")) {
         buf = Buffer.from(card.dataUrl.split(",")[1] ?? "", "base64");
@@ -440,10 +416,7 @@ Rules:
         const imgRes = await fetch(card.dataUrl);
         buf = Buffer.from(await imgRes.arrayBuffer());
       }
-      await sb.storage.from(BUCKETS.shareCards).upload(shareCardPath, buf, {
-        contentType: "image/png",
-        upsert: true,
-      });
+      await uploadBlob("shareCards", shareCardPath, buf, "image/png");
       shareCardUrl = await signedUrl(BUCKETS.shareCards, shareCardPath);
       plan.shareCardPath = shareCardPath;
     }
@@ -451,12 +424,7 @@ Rules:
     // Image is P0 but demo continues without card if API fails
   }
 
-  const sb = getSupabase();
-  await sb.from("action_plans").insert({
-    session_id: opts.session.id,
-    plan,
-    share_card_path: shareCardPath ?? null,
-  });
+  await saveActionPlan(opts.session.id, plan, shareCardPath ?? null);
 
   await insertEvidence({
     session_id: opts.session.id,
@@ -664,14 +632,7 @@ export async function recordActionAccept(
 export async function getSessionDetail(sessionId: string) {
   const session = await loadSession(sessionId);
   const evidence = await loadEvidence(sessionId);
-  const sb = getSupabase();
-  const { data: planRow } = await sb
-    .from("action_plans")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const planRow = await getActionPlan(sessionId);
 
   let photoUrl: string | null = null;
   if (session.photo_path) {
@@ -680,7 +641,10 @@ export async function getSessionDetail(sessionId: string) {
 
   let plan: ActionPlan | null = null;
   if (planRow?.plan) {
-    plan = ActionPlanSchema.parse({ ...planRow.plan, sessionId });
+    plan = ActionPlanSchema.parse({
+      ...(planRow.plan as Record<string, unknown>),
+      sessionId,
+    });
   }
 
   return {

@@ -7,7 +7,10 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "smoke:meta": "tsx scripts/smoke-meta.ts"
+    "smoke:meta": "tsx scripts/smoke-meta.ts",
+    "e2e:real": "tsx scripts/e2e-real.ts",
+    "test:safety": "tsx scripts/test-safety-gate.ts",
+    "test:quality": "tsx scripts/test-quality-gate.ts"
   },
   "dependencies": {
     "@iklim-pal/action-packs": "*",
