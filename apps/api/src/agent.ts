@@ -64,6 +64,21 @@ async function downloadPhotoDataUrl(photoPath: string): Promise<string> {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
+/** Prefer Supabase signed URL for Muse; fall back to base64 only if signing fails. */
+async function photoUrlForMuse(photoPath: string): Promise<string> {
+  const url = await signedUrl(BUCKETS.photos, photoPath);
+  if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+    return url;
+  }
+  // Local-store fallback may return data: URLs from signedUrl — still usable by Muse
+  if (url?.startsWith("data:")) return url;
+  return downloadPhotoDataUrl(photoPath);
+}
+
+function hasSamEvidence(evidence: EvidenceRow[]): boolean {
+  return evidence.some((e) => e.kind === "sam_mask");
+}
+
 function truthyAnswer(value: unknown): boolean {
   return (
     value === true ||
@@ -198,11 +213,13 @@ async function callSparkPlanner(opts: {
   pack: ActionPack;
   session: SessionRow;
   evidence: EvidenceRow[];
-  imageDataUrl?: string;
+  /** Signed https URL or data URL; omit on text-only Q&A turns after SAM. */
+  imageUrl?: string;
   retryHint?: string;
 }): Promise<PlannerAction> {
   const answered = [...answeredIds(opts.evidence)];
   const accepted = [...acceptedActionIds(opts.evidence)];
+  const visionMode = Boolean(opts.imageUrl);
   const system = `You are the Iklim PAL planner for youth plastic/river litter action.
 Return JSON only matching:
 {"action":"segment_parts"|"ask_question"|"propose_action"|"finalize_plan","partIds":[],"questionId":"","actionId":"","assistantMessage":"","escalate":false,"escalateReasonId":""}
@@ -216,7 +233,23 @@ Rules:
 - If the user concern cannot be served by this pack (not plastic/river/drain litter), set escalate=true and escalateReasonId="stop_out_of_scope".
 - finalize_plan only after some questions answered (or escalate).
 - No climate science lecture — focus on next practical step.
+${
+  visionMode
+    ? "- An image is attached: use it with segment_parts / first inspection."
+    : "- No image attached this turn: SAM masks already exist in evidence. Decide next ask_question, propose_action, or finalize_plan from the evidence ledger and answers only. Do not request segment_parts again unless sam_mask evidence is missing."
+}
 ${opts.retryHint ? `\nRETRY: ${opts.retryHint}` : ""}`;
+
+  const samEvidence = opts.evidence
+    .filter((e) => e.kind === "sam_mask")
+    .map((e) => ({
+      partId: e.part_id,
+      samPhrase: e.payload.samPhrase,
+      samTextPreview:
+        typeof e.payload.samText === "string"
+          ? e.payload.samText.slice(0, 400)
+          : undefined,
+    }));
 
   const userText = JSON.stringify({
     city: opts.session.city,
@@ -225,6 +258,7 @@ ${opts.retryHint ? `\nRETRY: ${opts.retryHint}` : ""}`;
     answeredQuestionIds: answered,
     acceptedActionIds: accepted,
     evidenceKinds: opts.evidence.map((e) => e.kind),
+    samEvidence,
     pack: {
       parts: opts.pack.parts.map((p) => ({ id: p.id, samPhrase: p.samPhrase })),
       questions: opts.pack.questions.map((q) => ({
@@ -245,7 +279,7 @@ ${opts.retryHint ? `\nRETRY: ${opts.retryHint}` : ""}`;
   const { text } = await sparkRespond({
     system,
     userText,
-    imageDataUrl: opts.imageDataUrl,
+    imageDataUrl: opts.imageUrl,
   });
   return PlannerActionSchema.parse(parseJsonFromModel(text));
 }
@@ -254,7 +288,7 @@ async function planNext(opts: {
   pack: ActionPack;
   session: SessionRow;
   evidence: EvidenceRow[];
-  imageDataUrl?: string;
+  imageUrl?: string;
 }): Promise<PlannerAction> {
   let planned: PlannerAction;
   try {
@@ -312,7 +346,7 @@ async function runSegment(
   session: SessionRow,
   pack: ActionPack,
   partIds: string[],
-  imageDataUrl: string,
+  imageUrl: string,
 ): Promise<void> {
   const ids = partIds.length
     ? partIds
@@ -321,7 +355,7 @@ async function runSegment(
     assertPackPart(pack, partId);
     const part = pack.parts.find((p) => p.id === partId)!;
     const sam = await segmentWithSam({
-      imageDataUrl,
+      imageDataUrl: imageUrl,
       phrase: part.samPhrase,
     });
     const maskPath = `${session.id}/${partId}-${Date.now()}.json`;
@@ -348,7 +382,8 @@ async function finalizePlan(opts: {
   session: SessionRow;
   pack: ActionPack;
   evidence: EvidenceRow[];
-  imageDataUrl?: string;
+  /** Signed URL (preferred) for Wonder + Muse Image reference. */
+  imageUrl?: string;
 }): Promise<{ plan: ActionPlan; shareCardUrl: string | null }> {
   const system = `You are Muse Wonder synthesizing an Iklim PAL Action Plan for youth.
 Return JSON only:
@@ -375,7 +410,7 @@ Rules:
       packActions: opts.pack.actions,
       escalationDefaults: opts.pack.escalationDefaults,
     }),
-    imageDataUrl: opts.imageDataUrl,
+    imageDataUrl: opts.imageUrl,
   });
 
   const rawPlan = parseJsonFromModel(text) as Record<string, unknown>;
@@ -405,7 +440,7 @@ Rules:
   try {
     const card = await generateShareCard({
       prompt: `Create a friendly youth cleanup invite card for Iklim PAL. City: ${opts.session.city}. Goal: ${plan.goal}. Non-political community litter cleanup. Bold readable text, hopeful outdoor vibe, no logos of political parties.`,
-      referenceImageDataUrl: opts.imageDataUrl,
+      referenceImageDataUrl: opts.imageUrl,
     });
     if (card.dataUrl) {
       shareCardPath = `${opts.session.id}/share-${Date.now()}.png`;
@@ -463,8 +498,19 @@ export async function runAgentStep(sessionId: string): Promise<AgentStepResponse
     return emptyStep(sessionId, "collecting", "Upload a photo of the litter concern first.");
   }
 
-  const imageDataUrl = await downloadPhotoDataUrl(session.photo_path);
-  const planned = await planNext({ pack, session, evidence, imageDataUrl });
+  // Vision only before SAM; Q&A after SAM is text-only (no photo re-send).
+  const needsVisionForPlanner = !hasSamEvidence(evidence);
+  let imageUrl: string | undefined;
+  if (needsVisionForPlanner) {
+    imageUrl = await photoUrlForMuse(session.photo_path);
+  }
+
+  const planned = await planNext({
+    pack,
+    session,
+    evidence,
+    imageUrl,
+  });
 
   if (planned.escalate) {
     if (planned.escalateReasonId === "stop_out_of_scope") {
@@ -481,7 +527,8 @@ export async function runAgentStep(sessionId: string): Promise<AgentStepResponse
 
   try {
     if (planned.action === "segment_parts") {
-      await runSegment(session, pack, planned.partIds ?? [], imageDataUrl);
+      const visionUrl = imageUrl ?? (await photoUrlForMuse(session.photo_path));
+      await runSegment(session, pack, planned.partIds ?? [], visionUrl);
       evidence = await loadEvidence(sessionId);
       const masks = await collectMasksUi(evidence);
       return {
@@ -552,13 +599,15 @@ export async function runAgentStep(sessionId: string): Promise<AgentStepResponse
       };
     }
 
-    // finalize_plan
+    // finalize_plan — Wonder + Muse Image still get the stored photo via signed URL
     await setStatus(sessionId, "summarizing");
+    const finalizeImageUrl =
+      imageUrl ?? (await photoUrlForMuse(session.photo_path));
     const { plan, shareCardUrl } = await finalizePlan({
       session,
       pack,
       evidence,
-      imageDataUrl,
+      imageUrl: finalizeImageUrl,
     });
     const masks = await collectMasksUi(evidence);
     return {
