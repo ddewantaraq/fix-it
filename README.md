@@ -2,21 +2,23 @@
 
 Local climate **action planner** for young people (Meta Global AI Developer Hackathon · Indie · Build for Your World).
 
-Turn a neighborhood litter concern (photo + city + text) into a **pack-approved, safety-bounded, measurable Action Plan** — not a climate lecture, not a political tool, not a one-shot image captioner.
+Turn a neighborhood litter photo into a **pack-approved, safety-bounded, measurable Action Plan** (Muse confirms the concern with you; place and safety stay in Q&A) — not a climate lecture, not a political tool, not a one-shot image captioner.
 
 **How to use the app:** [`INSTRUCTIONS.md`](INSTRUCTIONS.md)
 
-Also see [`architecture.md`](architecture.md), [`task.md`](task.md), [`docs/anti-project.md`](docs/anti-project.md), and [`docs/demo-script.md`](docs/demo-script.md).
+Also see [`architecture.md`](architecture.md), [`task.md`](task.md), [`docs/anti-project.md`](docs/anti-project.md), [`docs/demo-video-script.md`](docs/demo-video-script.md), and [`docs/demo-script.md`](docs/demo-script.md).
 
 ## Muse models used
 
 | Model | Role |
 | --- | --- |
 | `sam-3.1` | Segment litter in the photo |
-| `muse-spark-1.3` | Tool-loop planner |
+| `muse-spark-1.3` | Concern hypothesis after SAM (not every Q&A turn) |
 | `muse-wonder-1.0` | Action Plan synthesis |
 | `muse-image-1.0` | Share / invite card |
-| `muse-voice-transcribe-1.0` | Optional spoken concern (P1) |
+| `muse-voice-transcribe-1.0` | Optional spoken concern on `q_concern` |
+
+**Q&A after concern** uses Action Pack order (deterministic) so answers stay fast. **Plans** home tracks Active/Past plans with step checkoffs (anonymous device `ownerKey`).
 
 **No RAG. No fine-tuning.** Domain knowledge lives in [`packages/action-packs/plastic_litter_id_v1.json`](packages/action-packs/plastic_litter_id_v1.json) (sources: [`docs/pack-sources.md`](docs/pack-sources.md)).
 

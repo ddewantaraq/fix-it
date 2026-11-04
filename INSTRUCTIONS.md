@@ -30,9 +30,10 @@ cp .env.example .env
 
 ### One-time database setup
 
-In the Supabase SQL editor, run:
+In the Supabase SQL editor, run in order:
 
-[`supabase/migrations/001_iklim_pal.sql`](supabase/migrations/001_iklim_pal.sql)
+1. [`supabase/migrations/001_iklim_pal.sql`](supabase/migrations/001_iklim_pal.sql)
+2. [`supabase/migrations/002_session_owner_progress.sql`](supabase/migrations/002_session_owner_progress.sql) — `owner_key`, `active` status, plan progress
 
 Then (if not already seeded):
 
@@ -77,16 +78,16 @@ Expect `"store":"supabase"`.
 ### Hero path (riverbank litter)
 
 1. Open the web app.
-2. Set **City / neighborhood** (e.g. Bandung).
-3. Write a short **Concern** (e.g. plastic bags on the riverbank).
-4. Choose a **real litter photo** — use the demo fixture:
+2. Choose a **real litter photo** — use the demo fixture:
    - `fixtures/litter/S2_riverbank_bags/photo.png`
-5. Optionally attach a short **voice** clip of the concern (Meta Voice Transcribe).
-6. Click **Start**.
-7. Wait while SAM marks litter (large photos can take a minute).
-8. Answer the guided questions (gloves, friends, near water, hazards, time available).
-9. When an action is proposed, click **Accept action**.
-10. Continue until you get an **Action Plan** (and optionally a Muse Image share card).
+3. Optionally tap **Use my location** (browser asks permission). Only a place name is kept — GPS coordinates are not stored.
+4. Click **Start**.
+5. Wait while SAM marks litter (large photos can take a minute).
+6. Confirm Muse’s reading of the concern (**Yes / No**). If No, type a short concern or tap **Record** to speak it (browser mic → Muse Voice Transcribe), then **Send**.
+7. Answer place + safety questions (city, gloves, friends, near water, hazards, time). These turns are **pack-ordered** (no Spark wait).
+8. When an action is proposed, click **Accept action**.
+9. Review the **Action Plan** and answer whether it matches the photo. If No, restate the concern and the plan rebuilds.
+10. Open **Plans** in the top bar to see Active / Past plans and check off steps as you go.
 
 ### Hazard path (escalate)
 

@@ -52,6 +52,7 @@ export const localStore = {
     concern_text: string;
     city: string;
     status: string;
+    owner_key?: string | null;
   }) {
     const db = load();
     const id = randomUUID();
@@ -59,6 +60,7 @@ export const localStore = {
     const full = {
       id,
       ...row,
+      owner_key: row.owner_key ?? null,
       photo_path: null,
       voice_path: null,
       created_at: now,
@@ -71,6 +73,13 @@ export const localStore = {
 
   getSession(id: string) {
     return load().sessions[id] ?? null;
+  },
+
+  listSessionsByOwner(ownerKey: string) {
+    const db = load();
+    return Object.values(db.sessions)
+      .filter((s) => s.owner_key === ownerKey)
+      .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
   },
 
   updateSession(id: string, patch: Record<string, unknown>) {
@@ -122,6 +131,7 @@ export const localStore = {
       session_id: sessionId,
       plan,
       share_card_path,
+      progress: existing?.progress ?? { completedStepOrders: [] },
       created_at: existing?.created_at ?? new Date().toISOString(),
     };
     save(db);
@@ -131,6 +141,43 @@ export const localStore = {
   getPlan(sessionId: string) {
     const db = load();
     return Object.values(db.action_plans).find((p) => p.session_id === sessionId) ?? null;
+  },
+
+  updatePlanProgress(sessionId: string, progress: { completedStepOrders: number[] }) {
+    const db = load();
+    const row = Object.values(db.action_plans).find((p) => p.session_id === sessionId);
+    if (!row) throw new Error("plan not found");
+    row.progress = progress;
+    db.action_plans[String(row.id)] = row;
+    save(db);
+    return row;
+  },
+
+  deleteEvidence(sessionId: string, opts: { questionIds?: string[]; kinds?: string[] }) {
+    const db = load();
+    const qids = new Set(opts.questionIds ?? []);
+    const kinds = new Set(opts.kinds ?? []);
+    for (const [id, row] of Object.entries(db.evidence_items)) {
+      if (row.session_id !== sessionId) continue;
+      const byQ = qids.size > 0 && row.question_id && qids.has(String(row.question_id));
+      const byKind = kinds.size > 0 && kinds.has(String(row.kind));
+      if (byQ || byKind) delete db.evidence_items[id];
+    }
+    save(db);
+  },
+
+  deleteEvidenceByIds(ids: string[]) {
+    const db = load();
+    for (const id of ids) delete db.evidence_items[id];
+    save(db);
+  },
+
+  deletePlans(sessionId: string) {
+    const db = load();
+    for (const [id, row] of Object.entries(db.action_plans)) {
+      if (row.session_id === sessionId) delete db.action_plans[id];
+    }
+    save(db);
   },
 };
 

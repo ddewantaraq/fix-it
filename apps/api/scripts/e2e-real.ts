@@ -15,12 +15,15 @@ const API = process.env.VITE_API_BASE_URL || `http://localhost:${process.env.API
 const root = resolve(__dirname, "../../..");
 
 const answers: Record<string, string | boolean> = {
+  q_concern_confirm: true,
+  q_concern: "Plastic bags and bottles along the riverbank.",
   q_city: "Bandung — Cikapundung riverside",
   q_hours: "1_to_2h",
   q_friends: true,
   q_gloves: true,
   q_near_water: true,
   q_hazard: false,
+  q_plan_match: true,
 };
 
 async function api(path: string, init?: RequestInit) {
@@ -41,8 +44,7 @@ async function api(path: string, init?: RequestInit) {
 async function runScenario(opts: {
   name: string;
   photo: string;
-  concern: string;
-  city: string;
+  cityHint?: string;
   forceHazard?: boolean;
 }) {
   console.log(`\n=== ${opts.name} ===`);
@@ -51,8 +53,8 @@ async function runScenario(opts: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       actionPackId: "plastic_litter_id_v1",
-      city: opts.city,
-      concernText: opts.concern,
+      city: opts.cityHint ?? "",
+      concernText: "",
     }),
   });
   const sessionId = String(session.id);
@@ -65,7 +67,7 @@ async function runScenario(opts: {
   await api(`/sessions/${sessionId}/photo`, { method: "POST", body: form });
 
   let step: Record<string, unknown> | null = null;
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 24; i++) {
     step = await api(`/sessions/${sessionId}/step`, { method: "POST" });
     const status = step.status;
     const escalated = step.escalated;
@@ -80,7 +82,12 @@ async function runScenario(opts: {
     );
     console.log("  msg:", String(step.assistantMessage).slice(0, 160));
 
-    if (escalated || status === "done" || status === "escalated") break;
+    if (
+      (escalated || status === "done" || status === "active" || status === "escalated") &&
+      !ui.question?.id
+    ) {
+      break;
+    }
 
     if (ui.question?.id) {
       let value: string | boolean = answers[ui.question.id] ?? "yes";
@@ -94,7 +101,16 @@ async function runScenario(opts: {
       console.log(
         `  answered ${ui.question.id}=${String(value)} → status=${step.status} escalated=${step.escalated}`,
       );
-      if (step.escalated || step.status === "done" || step.status === "escalated") break;
+      const nextUi = step.ui as { question?: { id: string } | null };
+      if (
+        (step.escalated ||
+          step.status === "done" ||
+          step.status === "active" ||
+          step.status === "escalated") &&
+        !nextUi.question?.id
+      ) {
+        break;
+      }
       continue;
     }
 
@@ -105,7 +121,16 @@ async function runScenario(opts: {
         body: JSON.stringify({ accept: true }),
       });
       console.log(`  accepted action → status=${step.status}`);
-      if (step.escalated || step.status === "done" || step.status === "escalated") break;
+      const nextUi = step.ui as { question?: { id: string } | null };
+      if (
+        (step.escalated ||
+          step.status === "done" ||
+          step.status === "active" ||
+          step.status === "escalated") &&
+        !nextUi.question?.id
+      ) {
+        break;
+      }
     }
   }
 
@@ -119,37 +144,43 @@ async function main() {
   const s2 = await runScenario({
     name: "S2_riverbank_bags",
     photo: resolve(root, "fixtures/litter/S2_riverbank_bags/photo.png"),
-    city: "Bandung",
-    concern: "Plastic bags and bottles along the riverbank near my neighborhood.",
+    cityHint: "Bandung",
   });
 
   const s4 = await runScenario({
     name: "S4_hazard_escalate",
     photo: resolve(root, "fixtures/litter/S4_hazard_escalate/photo.png"),
-    city: "Bandung",
-    concern: "There is a discarded jug that looks like a chemical container by the curb.",
+    cityHint: "Bandung",
     forceHazard: true,
   });
 
   const out = {
     s2: { sessionId: s2.sessionId, status: s2.step?.status, escalated: s2.step?.escalated, hasPlan: Boolean((s2.step?.ui as { plan?: unknown })?.plan) },
-    s4: { sessionId: s4.sessionId, status: s4.step?.status, escalated: s4.step?.escalated },
+    s4: {
+      sessionId: s4.sessionId,
+      status: s4.step?.status,
+      escalated: s4.step?.escalated,
+      hasPlan: Boolean((s4.step?.ui as { plan?: unknown })?.plan),
+    },
   };
   writeFileSync(resolve(__dirname, "e2e-last.json"), JSON.stringify({ out, s2, s4 }, null, 2));
   console.log("\nSUMMARY", out);
 
-  const s2ok =
-    out.s2.hasPlan || out.s2.status === "done" || (out.s2.status === "escalated" && out.s2.escalated);
-  // S2 should preferably produce a plan; allow escalate only if Wonder chose stop
-  const s2pass = Boolean(out.s2.hasPlan) || out.s2.status === "done";
-  const s4pass = Boolean(out.s4.escalated) || out.s4.status === "escalated";
+  // S2: plan + plan-match Yes → status active (executing); escalate path separate
+  const s2pass =
+    Boolean(out.s2.hasPlan) ||
+    out.s2.status === "active" ||
+    out.s2.status === "done";
+  const s4pass =
+    (Boolean(out.s4.escalated) || out.s4.status === "escalated") &&
+    Boolean(out.s4.hasPlan);
 
   if (!s2pass) {
     console.error("FAIL S2: expected Action Plan from real Muse path");
     process.exit(1);
   }
   if (!s4pass) {
-    console.error("FAIL S4: expected escalate");
+    console.error("FAIL S4: expected escalate with authority-contact plan");
     process.exit(1);
   }
   console.log("E2E OK (real fixtures + real agent)");

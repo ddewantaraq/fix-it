@@ -43,9 +43,33 @@ export const CreateSessionBodySchema = z.object({
   actionPackId: z
     .literal("plastic_litter_id_v1")
     .default("plastic_litter_id_v1"),
-  city: z.string().min(1),
-  concernText: z.string().min(1),
+  /** Optional place hint from browser geolocation label; confirmed later via q_city. */
+  city: z.string().default(""),
+  /** Filled after Muse concern confirm or q_concern; may start empty. */
+  concernText: z.string().default(""),
+  /** Anonymous device id for Plans history (localStorage). */
+  ownerKey: z.string().min(1).optional(),
 });
+
+export const PlanProgressSchema = z.object({
+  completedStepOrders: z.array(z.number().int().positive()),
+});
+
+export const UpdateProgressBodySchema = PlanProgressSchema;
+
+export const SessionSummarySchema = z.object({
+  id: z.string().uuid(),
+  city: z.string(),
+  concernText: z.string(),
+  status: SessionStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  hasPlan: z.boolean(),
+  progressPct: z.number().min(0).max(100),
+  goal: z.string().nullable().optional(),
+});
+
+export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
 export const AnswerBodySchema = z.object({
   questionId: z.string(),
@@ -81,6 +105,7 @@ export const SessionDetailSchema = z.object({
     concernText: z.string(),
     city: z.string(),
     status: SessionStatusSchema,
+    ownerKey: z.string().nullable().optional(),
     photoPath: z.string().nullable().optional(),
     photoUrl: z.string().nullable().optional(),
     voicePath: z.string().nullable().optional(),
@@ -89,6 +114,9 @@ export const SessionDetailSchema = z.object({
   }),
   evidence: z.array(z.record(z.unknown())),
   plan: ActionPlanSchema.nullable().optional(),
+  /** Fresh signed URL for Muse share card (bucket object); expires ~1h. */
+  shareCardUrl: z.string().nullable().optional(),
+  progress: PlanProgressSchema.nullable().optional(),
   lastStep: AgentStepResponseSchema.nullable().optional(),
 });
 

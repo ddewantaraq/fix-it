@@ -1,18 +1,26 @@
-# Iklim PAL — 3-minute demo script (stub)
+# Iklim PAL — live / shoot notes
 
 **Track:** Indie · Build for Your World  
-**Hero:** S2 riverbank litter · **Beat:** S4 hazard escalate
+**Hero:** S2 riverbank litter · **Beat:** S4 hazard escalate  
+**Full VO script:** [`demo-video-script.md`](demo-video-script.md)
 
-## Beat sheet (~180s)
+## Architecture callouts (say once)
+
+- **SAM** segments litter; **Spark** only proposes the concern hypothesis (not every Q&A turn).
+- **Pack-ordered Q&A** for safety/place chips (fast).
+- **Wonder** synthesizes the Action Plan; **Muse Image** share card.
+- **Plans** home: Active / Past + step checkoffs (anonymous `ownerKey`).
+
+## Beat sheet (short)
 
 | Time | On screen | Say |
 | --- | --- | --- |
-| 0:00–0:20 | Product title + one-liner | Young people care about climate but often don’t know a safe local first step. Iklim PAL turns a litter photo into a pack-approved action plan — not a lecture chatbot. |
-| 0:20–0:50 | Upload S2 `photo.png`, city Bandung | Here’s a real riverbank photo. We use SAM to mark litter, then Muse Spark asks only approved safety questions. |
-| 0:50–1:40 | Masks + Q&A | Gloves, friends, near water, hazards — practical gates, not politics. |
-| 1:40–2:20 | Action Plan + share card | Muse Wonder builds a measurable plan; Muse Image makes an invite card. |
-| 2:20–2:50 | S4 hazard jug | If the photo or answers show chemical/medical risk, we escalate: stop DIY, tell an adult/authority. |
-| 2:50–3:00 | Close | Awareness → action, with Muse models and safety rules. |
+| 0:00–0:25 | Title + capture | Awareness isn’t a plan — photo-first local action. |
+| 0:25–0:55 | S2 photo → SAM + concern Yes | SAM marks litter; Spark proposes concern; user confirms. |
+| 0:55–1:20 | Fast chips | Pack questions only — no Spark on every Yes/No. |
+| 1:20–1:50 | Plan + Plans | Wonder plan + Image card; track steps under Plans. |
+| 1:50–2:30 | S4 escalate | Hazard → stop DIY, tell an adult/authority. |
+| 2:30–3:00 | Muse table | No RAG; Action Pack + Muse tools. |
 
 ## Anti-project line (say once)
 

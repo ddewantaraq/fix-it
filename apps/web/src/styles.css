@@ -81,6 +81,198 @@ a:focus-visible {
   font-size: 0.875rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.plans-title {
+  margin: 4px 0 0;
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 450;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.plans-workspace-head {
+  align-items: flex-end;
+  margin-bottom: 28px;
+}
+
+.plans-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.plans-home {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 720px;
+}
+
+.plans-section h2 {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.plans-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.plan-card.is-alert {
+  background: var(--warn-bg);
+  border-color: #efd9c8;
+}
+
+.plan-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-card-top .kicker {
+  margin: 0;
+}
+
+.plan-card h3 {
+  margin: 0;
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 450;
+  font-size: clamp(1.25rem, 2.4vw, 1.55rem);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.plan-card-concern {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.plan-card-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.plan-card.is-alert .plan-card-progress {
+  background: #f0e4d8;
+}
+
+.plan-card-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+}
+
+.plan-card.is-alert .plan-card-progress span {
+  background: var(--warn);
+}
+
+.plan-card .meta {
+  margin: 0;
+}
+
+.plan-card .primary.is-compact {
+  align-self: flex-start;
+}
+
+.status-pill {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 6px 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.status-pill.is-alert {
+  border-color: #efd9c8;
+  background: #fff;
+  color: var(--warn);
+}
+
+.step-check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.step-check input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 4px 0 0;
+  padding: 0;
+  border-radius: 4px;
+  accent-color: var(--ink);
+}
+
+.step-check > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.step-check strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.step-check p {
+  margin: 0 0 6px;
+}
+
+.progress-line {
+  margin: 0 0 12px;
+}
+
 .hero {
   max-width: 1120px;
   margin: 0 auto;
@@ -266,29 +458,82 @@ textarea {
 }
 
 .primary,
-.ghost {
+.ghost,
+.chip,
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  padding: 11px 16px;
   border: 1px solid transparent;
+  line-height: 1.2;
 }
 
 .primary {
   width: 100%;
+  padding: 12px 20px;
   background: var(--ink);
   color: white;
+  font-weight: 600;
 }
 
-.ghost,
+.primary.is-compact,
+.reply .primary,
+.action-card .primary,
+.log > .primary,
+.plan-card .primary {
+  width: auto;
+  min-height: 44px;
+  padding: 11px 20px;
+}
+
+.ghost {
+  width: auto;
+  align-self: flex-start;
+  padding: 11px 16px;
+  min-height: 44px;
+  background: white;
+  border-color: var(--line-strong);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ghost:hover:not(:disabled),
+.chip:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
 .chip,
 .text-btn {
   background: white;
-  border: 1px solid var(--line-strong);
+  border-color: var(--line-strong);
+  color: var(--ink);
+  padding: 9px 14px;
+  font-weight: 500;
+  min-height: 40px;
 }
 
-.chip,
-.text-btn {
-  border-radius: 999px;
-  padding: 8px 12px;
+.chip.is-recording {
+  border-color: var(--warn, #b45309);
+  color: var(--warn, #b45309);
+  background: #fff7ed;
+}
+
+.answer-mode-toggle {
+  margin-top: 10px;
+  padding-left: 0;
+  border: none;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 0.9rem;
+  color: var(--muted, #667);
+}
+
+.answer-or {
+  margin: 12px 0 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .text-btn {
@@ -414,7 +659,6 @@ textarea {
 }
 
 .thread {
-  min-height: 70vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -429,7 +673,7 @@ textarea {
 }
 
 .log {
-  flex: 1;
+  flex: 0 1 auto;
   max-height: calc(100vh - 160px);
   overflow: auto;
   padding: 22px;
@@ -500,12 +744,6 @@ textarea {
 .reply input {
   flex: 1;
   min-width: 160px;
-}
-
-.reply .primary,
-.action-card .primary,
-.log > .primary {
-  width: auto;
 }
 
 .action-card .primary,
@@ -614,16 +852,28 @@ textarea {
   list-style: none;
   padding: 0;
   margin: 18px 0;
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .steps li {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 12px;
-  padding-bottom: 10px;
+  align-items: start;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
+}
+
+.steps li:has(.step-check) {
+  display: block;
+  padding-bottom: 14px;
+}
+
+.steps li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .step-index {
@@ -754,9 +1004,18 @@ textarea {
     position: static;
   }
 
-  .workspace-head {
+  .workspace-head,
+  .plans-workspace-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .plans-head-actions {
+    justify-content: flex-start;
+  }
+
+  .plans-home {
+    max-width: none;
   }
 
   .bubble {

@@ -8,13 +8,18 @@ import {
 } from "@iklim-pal/shared";
 import {
   BUCKETS,
+  deleteActionPlans,
+  deleteEvidenceByIds,
+  deleteEvidenceMatching,
   downloadPhoto,
   getActionPlan,
   getSession,
   insertEvidence as dbInsertEvidence,
   listEvidence,
+  listSessionsByOwner,
   saveActionPlan,
   signedUrl,
+  updatePlanProgress,
   updateSession,
   uploadBlob,
 } from "./db.js";
@@ -40,11 +45,28 @@ type SessionRow = {
   concern_text: string;
   city: string;
   status: string;
+  owner_key?: string | null;
   photo_path: string | null;
   voice_path: string | null;
   created_at: string;
   updated_at: string;
 };
+
+function parseProgress(raw: unknown): { completedStepOrders: number[] } {
+  if (!raw || typeof raw !== "object") return { completedStepOrders: [] };
+  const orders = (raw as { completedStepOrders?: unknown }).completedStepOrders;
+  if (!Array.isArray(orders)) return { completedStepOrders: [] };
+  return {
+    completedStepOrders: orders.filter((n): n is number => typeof n === "number"),
+  };
+}
+
+function progressPct(plan: ActionPlan | null, progress: { completedStepOrders: number[] }) {
+  const total = plan?.steps?.length ?? 0;
+  if (total === 0) return 0;
+  const done = new Set(progress.completedStepOrders).size;
+  return Math.min(100, Math.round((done / total) * 100));
+}
 
 type EvidenceRow = {
   id: string;
@@ -77,6 +99,41 @@ async function photoUrlForMuse(photoPath: string): Promise<string> {
 
 function hasSamEvidence(evidence: EvidenceRow[]): boolean {
   return evidence.some((e) => e.kind === "sam_mask");
+}
+
+const CONCERN_QUESTION_IDS = ["q_concern_confirm", "q_concern", "q_plan_match"] as const;
+
+function answerFor(
+  evidence: EvidenceRow[],
+  questionId: string,
+): unknown {
+  const row = [...evidence]
+    .reverse()
+    .find((e) => e.kind === "user_answer" && e.question_id === questionId);
+  return row?.payload.value;
+}
+
+function concernHypothesis(evidence: EvidenceRow[]): string | null {
+  const row = [...evidence]
+    .reverse()
+    .find(
+      (e) =>
+        e.kind === "model_observation" &&
+        typeof e.payload.concernHypothesis === "string",
+    );
+  return row ? String(row.payload.concernHypothesis) : null;
+}
+
+function concernSettled(session: SessionRow): boolean {
+  return Boolean(session.concern_text?.trim());
+}
+
+function planMatchAnswered(evidence: EvidenceRow[]): boolean {
+  return answeredIds(evidence).has("q_plan_match");
+}
+
+function planMatchAccepted(evidence: EvidenceRow[]): boolean {
+  return truthyAnswer(answerFor(evidence, "q_plan_match"));
 }
 
 function truthyAnswer(value: unknown): boolean {
@@ -159,6 +216,101 @@ function emptyStep(
   };
 }
 
+function buildEscalatePlan(
+  sessionId: string,
+  pack: ActionPack,
+  reason: "hazard" | "out_of_scope",
+): ActionPlan {
+  const stopId = reason === "hazard" ? "stop_hazard" : "stop_out_of_scope";
+  const stop = pack.stopConditions.find((s) => s.id === stopId);
+  const safety =
+    stop?.userMessage ?? pack.escalationDefaults.message;
+  return ActionPlanSchema.parse({
+    sessionId,
+    goal:
+      reason === "hazard"
+        ? "Report the hazard and get adult or local-authority help — do not DIY-clean"
+        : "Ask an adult or local authority for help — this case is outside youth DIY scope",
+    steps: [
+      {
+        order: 1,
+        title: "Stay clear of the site",
+        detail:
+          "Do not touch needles, syringes, medical waste, oil drums, or unknown chemical containers. Keep friends and pets away.",
+        owner: "solo",
+        timeboxMinutes: 5,
+      },
+      {
+        order: 2,
+        title: "Note the location",
+        detail:
+          "Write landmarks, street or neighborhood names, and nearby buildings so responders can find it. Only photograph from a safe distance.",
+        owner: "solo",
+        timeboxMinutes: 10,
+      },
+      {
+        order: 3,
+        title: "Contact an adult or local authority",
+        detail:
+          "Tell a parent, teacher, building manager, or local environmental / waste authority. Share your location notes and let trained people remove the hazard.",
+        owner: "adult_help",
+        timeboxMinutes: 20,
+      },
+    ],
+    materials: ["phone", "notes app or notebook"],
+    safetyNotes: [safety, "Never enter water or traffic to investigate."],
+    measureHow: [
+      "Confirm an adult or authority was notified",
+      "Optional: keep a safe-distance photo for the report",
+    ],
+    uncertainty: ["Exact hotline or office may vary by city"],
+    recommendation: "stop_and_escalate",
+  });
+}
+
+async function finalizeEscalatePlan(
+  sessionId: string,
+  pack: ActionPack,
+  message: string,
+  reason: "hazard" | "out_of_scope" = "hazard",
+): Promise<AgentStepResponse> {
+  await setStatus(sessionId, "escalated");
+  let { plan, shareCardUrl } = await loadPlanUi(sessionId);
+  if (!plan || plan.recommendation !== "stop_and_escalate") {
+    plan = buildEscalatePlan(sessionId, pack, reason);
+    await saveActionPlan(sessionId, plan, null);
+    shareCardUrl = null;
+  }
+  const masks = await collectMasksUi(await loadEvidence(sessionId));
+  return {
+    sessionId,
+    status: "escalated",
+    assistantMessage: message,
+    escalated: true,
+    ui: {
+      masks,
+      question: null,
+      proposedAction: null,
+      plan,
+      shareCardUrl,
+    },
+  };
+}
+
+/** Repair older escalated sessions that never got an authority-contact plan row. */
+async function ensureEscalatePlanBackfill(
+  sessionId: string,
+  status: string,
+  existing: ActionPlan | null,
+): Promise<ActionPlan | null> {
+  if (existing) return existing;
+  if (status !== "escalated") return null;
+  const pack = loadActionPack();
+  const plan = buildEscalatePlan(sessionId, pack, "hazard");
+  await saveActionPlan(sessionId, plan, null);
+  return plan;
+}
+
 async function collectMasksUi(evidence: EvidenceRow[]) {
   const masks: { partId: string; url: string }[] = [];
   for (const e of evidence.filter((x) => x.kind === "sam_mask")) {
@@ -176,6 +328,7 @@ async function collectMasksUi(evidence: EvidenceRow[]) {
 
 function deterministicPlan(opts: {
   pack: ActionPack;
+  session: SessionRow;
   evidence: EvidenceRow[];
 }): PlannerAction {
   if (!opts.evidence.some((e) => e.kind === "sam_mask")) {
@@ -185,12 +338,37 @@ function deterministicPlan(opts: {
       assistantMessage: "I'll mark visible litter in your photo first.",
     };
   }
-  const nextQ = opts.pack.questions.find((q) => !answeredIds(opts.evidence).has(q.id));
+  const answered = answeredIds(opts.evidence);
+  // Concern + plan-match are handled as gates in runAgentStep / recordAnswer
+  const nextQ = opts.pack.questions.find(
+    (q) =>
+      !answered.has(q.id) &&
+      q.id !== "q_concern_confirm" &&
+      q.id !== "q_concern" &&
+      q.id !== "q_plan_match",
+  );
   if (nextQ) {
     return {
       action: "ask_question",
       questionId: nextQ.id,
       assistantMessage: nextQ.text,
+    };
+  }
+  const accepted = acceptedActionIds(opts.evidence);
+  const nextAction = opts.pack.actions.find((a) => !accepted.has(a.id));
+  // Propose at least one pack action before finalize; allow finalize after ≥1 accept
+  if (nextAction && accepted.size === 0) {
+    return {
+      action: "propose_action",
+      actionId: nextAction.id,
+      assistantMessage: nextAction.title,
+    };
+  }
+  if (nextAction && accepted.size > 0 && accepted.size < Math.min(2, opts.pack.actions.length)) {
+    return {
+      action: "propose_action",
+      actionId: nextAction.id,
+      assistantMessage: nextAction.title,
     };
   }
   return {
@@ -226,12 +404,13 @@ Return JSON only matching:
 Rules:
 - Only use IDs from the action pack. Never invent IDs.
 - Prefer segment_parts first if no sam_mask evidence yet.
-- Ask unanswered pack questions before proposing actions.
+- Never ask q_concern_confirm, q_concern, or q_plan_match (the app handles those).
+- Ask unanswered pack questions (city, safety, hours) before proposing actions.
 - Never invent political, lobbying, or protest actions.
 - Never claim guaranteed climate impact or CO2 numbers.
 - If hazard evidence is present, escalate=true.
 - If the user concern cannot be served by this pack (not plastic/river/drain litter), set escalate=true and escalateReasonId="stop_out_of_scope".
-- finalize_plan only after some questions answered (or escalate).
+- finalize_plan only after concern_text is set and key questions answered (or escalate).
 - No climate science lecture — focus on next practical step.
 ${
   visionMode
@@ -299,17 +478,33 @@ async function planNext(opts: {
 
   if (planned.escalate) return planned;
 
+  // Never let Spark drive concern/plan-match questions
+  if (
+    planned.action === "ask_question" &&
+    planned.questionId &&
+    (CONCERN_QUESTION_IDS as readonly string[]).includes(planned.questionId)
+  ) {
+    planned = deterministicPlan(opts);
+  }
+
   if (!isPlannerActionInPack(opts.pack, planned)) {
     try {
       planned = await callSparkPlanner({
         ...opts,
         retryHint:
-          "Previous response used unknown pack IDs. Use only IDs listed in pack, or escalate with escalateReasonId stop_out_of_scope.",
+          "Previous response used unknown pack IDs. Use only IDs listed in pack, or escalate with escalateReasonId stop_out_of_scope. Do not ask q_concern_confirm, q_concern, or q_plan_match.",
       });
     } catch {
       return outOfScopeAction(opts.pack);
     }
     if (planned.escalate) return planned;
+    if (
+      planned.action === "ask_question" &&
+      planned.questionId &&
+      (CONCERN_QUESTION_IDS as readonly string[]).includes(planned.questionId)
+    ) {
+      planned = deterministicPlan(opts);
+    }
     if (!isPlannerActionInPack(opts.pack, planned)) {
       return outOfScopeAction(opts.pack);
     }
@@ -318,13 +513,133 @@ async function planNext(opts: {
   return planned;
 }
 
+async function ensureConcernHypothesis(
+  session: SessionRow,
+  evidence: EvidenceRow[],
+): Promise<string> {
+  const existing = concernHypothesis(evidence);
+  if (existing) return existing;
+  if (!session.photo_path) {
+    return "Visible litter that needs a safe local cleanup plan.";
+  }
+  const imageUrl = await photoUrlForMuse(session.photo_path);
+  try {
+    const { text } = await sparkRespond({
+      system: `You describe neighborhood litter for youth action planning.
+Return JSON only: {"concernHypothesis":"one short sentence"}
+Rules:
+- Describe only what is visible (litter type + setting).
+- No politics, no CO2 claims, no diagnosis beyond litter.
+- Keep under 20 words.`,
+      userText: JSON.stringify({
+        cityHint: session.city || null,
+        note: "Summarize the litter concern visible in the attached photo.",
+      }),
+      imageDataUrl: imageUrl,
+    });
+    const parsed = parseJsonFromModel(text) as { concernHypothesis?: string };
+    const hypothesis =
+      typeof parsed.concernHypothesis === "string" && parsed.concernHypothesis.trim()
+        ? parsed.concernHypothesis.trim()
+        : "There is visible litter that needs a safe local cleanup plan.";
+    await insertEvidence({
+      session_id: session.id,
+      kind: "model_observation",
+      part_id: null,
+      question_id: null,
+      action_id: null,
+      payload: { concernHypothesis: hypothesis },
+      source: "muse-spark-1.3",
+    });
+    return hypothesis;
+  } catch {
+    const fallback = "There is visible litter that needs a safe local cleanup plan.";
+    await insertEvidence({
+      session_id: session.id,
+      kind: "model_observation",
+      part_id: null,
+      question_id: null,
+      action_id: null,
+      payload: { concernHypothesis: fallback },
+      source: "rules",
+    });
+    return fallback;
+  }
+}
+
+function questionStep(
+  sessionId: string,
+  pack: ActionPack,
+  questionId: string,
+  assistantMessage: string,
+  masks: { partId: string; url: string }[],
+  plan?: ActionPlan | null,
+  shareCardUrl?: string | null,
+): AgentStepResponse {
+  const q = pack.questions.find((x) => x.id === questionId)!;
+  return {
+    sessionId,
+    status: plan ? "summarizing" : "questioning",
+    assistantMessage,
+    escalated: false,
+    ui: {
+      masks,
+      question: {
+        id: q.id,
+        text: q.text,
+        expects: q.expects,
+        options: q.options,
+      },
+      proposedAction: null,
+      plan: plan ?? null,
+      shareCardUrl: shareCardUrl ?? null,
+    },
+  };
+}
+
+async function loadPlanUi(sessionId: string): Promise<{
+  plan: ActionPlan | null;
+  shareCardUrl: string | null;
+}> {
+  const planRow = await getActionPlan(sessionId);
+  if (!planRow?.plan) return { plan: null, shareCardUrl: null };
+  const plan = ActionPlanSchema.parse({
+    ...(planRow.plan as Record<string, unknown>),
+    sessionId,
+  });
+  let shareCardUrl: string | null = null;
+  if (plan.shareCardPath) {
+    shareCardUrl = await signedUrl(BUCKETS.shareCards, plan.shareCardPath);
+  } else if (typeof planRow.share_card_path === "string" && planRow.share_card_path) {
+    shareCardUrl = await signedUrl(BUCKETS.shareCards, planRow.share_card_path);
+  }
+  return { plan, shareCardUrl };
+}
+
+async function reviseAfterPlanMismatch(sessionId: string): Promise<void> {
+  await deleteEvidenceMatching(sessionId, {
+    questionIds: [...CONCERN_QUESTION_IDS],
+    kinds: ["action_accepted"],
+  });
+  const evidence = await loadEvidence(sessionId);
+  const hypothesisIds = evidence
+    .filter(
+      (e) =>
+        e.kind === "model_observation" &&
+        typeof e.payload.concernHypothesis === "string",
+    )
+    .map((e) => e.id);
+  await deleteEvidenceByIds(hypothesisIds);
+  await deleteActionPlans(sessionId);
+  await updateSession(sessionId, { concern_text: "", status: "questioning" });
+}
+
 async function escalateOutOfScope(
   sessionId: string,
   pack: ActionPack,
   message?: string,
 ): Promise<AgentStepResponse> {
   const stop = pack.stopConditions.find((s) => s.id === "stop_out_of_scope");
-  await setStatus(sessionId, "escalated");
   await insertEvidence({
     session_id: sessionId,
     kind: "model_observation",
@@ -334,11 +649,11 @@ async function escalateOutOfScope(
     payload: { reason: "stop_out_of_scope", message: message ?? stop?.userMessage },
     source: "rules",
   });
-  return emptyStep(
+  return finalizeEscalatePlan(
     sessionId,
-    "escalated",
+    pack,
     message ?? stop?.userMessage ?? pack.escalationDefaults.message,
-    true,
+    "out_of_scope",
   );
 }
 
@@ -471,8 +786,9 @@ Rules:
     source: "muse-wonder-1.0",
   });
 
+  // Stay in summarizing until q_plan_match (unless escalate)
   const status =
-    plan.recommendation === "stop_and_escalate" ? "escalated" : "done";
+    plan.recommendation === "stop_and_escalate" ? "escalated" : "summarizing";
   await setStatus(opts.session.id, status);
 
   return { plan, shareCardUrl };
@@ -480,64 +796,169 @@ Rules:
 
 export async function runAgentStep(sessionId: string): Promise<AgentStepResponse> {
   const pack = loadActionPack();
-  const session = await loadSession(sessionId);
+  let session = await loadSession(sessionId);
   let evidence = await loadEvidence(sessionId);
 
   if (hazardTriggered(evidence)) {
-    await setStatus(sessionId, "escalated");
     const stop = pack.stopConditions.find((s) => s.id === "stop_hazard");
-    return emptyStep(
+    return finalizeEscalatePlan(
       sessionId,
-      "escalated",
+      pack,
       stop?.userMessage ?? pack.escalationDefaults.message,
-      true,
+      "hazard",
     );
   }
 
   if (!session.photo_path) {
     return emptyStep(sessionId, "collecting", "Upload a photo of the litter concern first.");
   }
+  const photoPath = session.photo_path;
 
-  // Vision only before SAM; Q&A after SAM is text-only (no photo re-send).
+  // Existing plan awaiting / completed match check
+  const existingPlan = await loadPlanUi(sessionId);
+  if (existingPlan.plan) {
+    const masks = await collectMasksUi(evidence);
+    if (existingPlan.plan.recommendation === "stop_and_escalate") {
+      await setStatus(sessionId, "escalated");
+      return {
+        sessionId,
+        status: "escalated",
+        assistantMessage: "This needs adult or authority help — do not DIY-clean hazards.",
+        escalated: true,
+        ui: {
+          masks,
+          question: null,
+          proposedAction: null,
+          plan: existingPlan.plan,
+          shareCardUrl: existingPlan.shareCardUrl,
+        },
+      };
+    }
+    if (planMatchAccepted(evidence)) {
+      // active = executing plan; done = all steps checked (see progress API)
+      const status =
+        session.status === "done" || session.status === "active"
+          ? (session.status as AgentStepResponse["status"])
+          : "active";
+      if (session.status !== status) await setStatus(sessionId, status);
+      return {
+        sessionId,
+        status,
+        assistantMessage: "Great — your plan matches the photo. You are ready to go.",
+        escalated: false,
+        ui: {
+          masks,
+          question: null,
+          proposedAction: null,
+          plan: existingPlan.plan,
+          shareCardUrl: existingPlan.shareCardUrl,
+        },
+      };
+    }
+    if (!planMatchAnswered(evidence)) {
+      await setStatus(sessionId, "summarizing");
+      return questionStep(
+        sessionId,
+        pack,
+        "q_plan_match",
+        "Here is your action plan. Does it match what you see in your photo?",
+        masks,
+        existingPlan.plan,
+        existingPlan.shareCardUrl,
+      );
+    }
+    // Answered no but plan still present — recover
+    await reviseAfterPlanMismatch(sessionId);
+    session = await loadSession(sessionId);
+    evidence = await loadEvidence(sessionId);
+  }
+
+  // After SAM: Muse concern hypothesis → confirm (or short-text if rejected)
+  if (hasSamEvidence(evidence) && !concernSettled(session)) {
+    const answered = answeredIds(evidence);
+    const masks = await collectMasksUi(evidence);
+    const confirmVal = answerFor(evidence, "q_concern_confirm");
+
+    if (!answered.has("q_concern_confirm")) {
+      const hypothesis = await ensureConcernHypothesis(session, evidence);
+      evidence = await loadEvidence(sessionId);
+      return questionStep(
+        sessionId,
+        pack,
+        "q_concern_confirm",
+        `Based on your photo, I understand the concern is: ${hypothesis}`,
+        masks,
+      );
+    }
+
+    if (!truthyAnswer(confirmVal) && !answered.has("q_concern")) {
+      return questionStep(
+        sessionId,
+        pack,
+        "q_concern",
+        "No problem — tell me in a sentence what litter concern we should plan for.",
+        masks,
+      );
+    }
+
+    // Confirm was yes but concern_text missing — recover from hypothesis
+    if (truthyAnswer(confirmVal) && !session.concern_text.trim()) {
+      const hypothesis =
+        concernHypothesis(evidence) ??
+        (await ensureConcernHypothesis(session, evidence));
+      await updateSession(sessionId, { concern_text: hypothesis });
+      session = await loadSession(sessionId);
+    }
+  }
+
+  // Vision only before SAM (Spark not used for routine Q&A after concern is settled).
   const needsVisionForPlanner = !hasSamEvidence(evidence);
   let imageUrl: string | undefined;
   if (needsVisionForPlanner) {
-    imageUrl = await photoUrlForMuse(session.photo_path);
+    imageUrl = await photoUrlForMuse(photoPath);
   }
 
-  const planned = await planNext({
-    pack,
-    session,
-    evidence,
-    imageUrl,
-  });
+  // After SAM + concern: pack-deterministic planner (no Spark). Spark only for concern hypothesis.
+  const planned =
+    hasSamEvidence(evidence) && concernSettled(session)
+      ? deterministicPlan({ pack, session, evidence })
+      : await planNext({
+          pack,
+          session,
+          evidence,
+          imageUrl,
+        });
 
   if (planned.escalate) {
     if (planned.escalateReasonId === "stop_out_of_scope") {
       return escalateOutOfScope(sessionId, pack, planned.assistantMessage);
     }
-    await setStatus(sessionId, "escalated");
-    return emptyStep(
+    return finalizeEscalatePlan(
       sessionId,
-      "escalated",
+      pack,
       planned.assistantMessage || pack.escalationDefaults.message,
-      true,
+      "hazard",
     );
   }
 
   try {
     if (planned.action === "segment_parts") {
-      const visionUrl = imageUrl ?? (await photoUrlForMuse(session.photo_path));
+      const visionUrl = imageUrl ?? (await photoUrlForMuse(photoPath));
       await runSegment(session, pack, planned.partIds ?? [], visionUrl);
       evidence = await loadEvidence(sessionId);
       const masks = await collectMasksUi(evidence);
-      return {
+      // Immediately move into concern confirm
+      const hypothesis = await ensureConcernHypothesis(
+        await loadSession(sessionId),
+        evidence,
+      );
+      return questionStep(
         sessionId,
-        status: "inspecting",
-        assistantMessage: planned.assistantMessage,
-        escalated: false,
-        ui: { masks, question: null, proposedAction: null, plan: null, shareCardUrl: null },
-      };
+        pack,
+        "q_concern_confirm",
+        `Based on your photo, I understand the concern is: ${hypothesis}`,
+        masks,
+      );
     }
 
     if (planned.action === "ask_question") {
@@ -599,10 +1020,9 @@ export async function runAgentStep(sessionId: string): Promise<AgentStepResponse
       };
     }
 
-    // finalize_plan — Wonder + Muse Image still get the stored photo via signed URL
+    // finalize_plan — Wonder + Muse Image; then ask plan match
     await setStatus(sessionId, "summarizing");
-    const finalizeImageUrl =
-      imageUrl ?? (await photoUrlForMuse(session.photo_path));
+    const finalizeImageUrl = imageUrl ?? (await photoUrlForMuse(photoPath));
     const { plan, shareCardUrl } = await finalizePlan({
       session,
       pack,
@@ -610,19 +1030,31 @@ export async function runAgentStep(sessionId: string): Promise<AgentStepResponse
       imageUrl: finalizeImageUrl,
     });
     const masks = await collectMasksUi(evidence);
-    return {
+    if (plan.recommendation === "stop_and_escalate") {
+      return {
+        sessionId,
+        status: "escalated",
+        assistantMessage: planned.assistantMessage || "This needs adult or authority help.",
+        escalated: true,
+        ui: {
+          masks,
+          question: null,
+          proposedAction: null,
+          plan,
+          shareCardUrl,
+        },
+      };
+    }
+    return questionStep(
       sessionId,
-      status: plan.recommendation === "stop_and_escalate" ? "escalated" : "done",
-      assistantMessage: planned.assistantMessage || "Here is your action plan.",
-      escalated: plan.recommendation === "stop_and_escalate",
-      ui: {
-        masks,
-        question: null,
-        proposedAction: null,
-        plan,
-        shareCardUrl,
-      },
-    };
+      pack,
+      "q_plan_match",
+      planned.assistantMessage ||
+        "Here is your action plan. Does it match what you see in your photo?",
+      masks,
+      plan,
+      shareCardUrl,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.startsWith("Unknown ")) {
@@ -639,6 +1071,28 @@ export async function recordAnswer(
 ): Promise<AgentStepResponse> {
   const pack = loadActionPack();
   assertPackQuestion(pack, questionId);
+
+  if (questionId === "q_plan_match" && !truthyAnswer(value)) {
+    await insertEvidence({
+      session_id: sessionId,
+      kind: "user_answer",
+      part_id: null,
+      question_id: questionId,
+      action_id: null,
+      payload: { value },
+      source: "user",
+    });
+    await reviseAfterPlanMismatch(sessionId);
+    const masks = await collectMasksUi(await loadEvidence(sessionId));
+    return questionStep(
+      sessionId,
+      pack,
+      "q_concern",
+      "Got it — the plan did not match your photo. In a sentence, what litter concern should we plan for?",
+      masks,
+    );
+  }
+
   await insertEvidence({
     session_id: sessionId,
     kind: "user_answer",
@@ -648,10 +1102,45 @@ export async function recordAnswer(
     payload: { value },
     source: "user",
   });
+
+  if (questionId === "q_concern_confirm" && truthyAnswer(value)) {
+    const evidence = await loadEvidence(sessionId);
+    const hypothesis =
+      concernHypothesis(evidence) ??
+      "Visible litter that needs a safe local cleanup plan.";
+    await updateSession(sessionId, { concern_text: hypothesis });
+  }
+
+  if (questionId === "q_concern" && typeof value === "string" && value.trim()) {
+    await updateSession(sessionId, { concern_text: value.trim() });
+  }
+
+  if (questionId === "q_city" && typeof value === "string" && value.trim()) {
+    await updateSession(sessionId, { city: value.trim() });
+  }
+
+  if (questionId === "q_plan_match" && truthyAnswer(value)) {
+    await setStatus(sessionId, "active");
+    const { plan, shareCardUrl } = await loadPlanUi(sessionId);
+    const masks = await collectMasksUi(await loadEvidence(sessionId));
+    return {
+      sessionId,
+      status: "active",
+      assistantMessage: "Great — your plan matches the photo. Track it anytime under Plans.",
+      escalated: false,
+      ui: {
+        masks,
+        question: null,
+        proposedAction: null,
+        plan,
+        shareCardUrl,
+      },
+    };
+  }
+
   if (questionId === "q_hazard" && truthyAnswer(value)) {
-    await setStatus(sessionId, "escalated");
     const stop = pack.stopConditions.find((s) => s.id === "stop_hazard")!;
-    return emptyStep(sessionId, "escalated", stop.userMessage, true);
+    return finalizeEscalatePlan(sessionId, pack, stop.userMessage, "hazard");
   }
   return runAgentStep(sessionId);
 }
@@ -690,10 +1179,28 @@ export async function getSessionDetail(sessionId: string) {
 
   let plan: ActionPlan | null = null;
   if (planRow?.plan) {
-    plan = ActionPlanSchema.parse({
-      ...(planRow.plan as Record<string, unknown>),
-      sessionId,
-    });
+    try {
+      plan = ActionPlanSchema.parse({
+        ...(planRow.plan as Record<string, unknown>),
+        sessionId,
+      });
+    } catch {
+      plan = null;
+    }
+  }
+  plan = await ensureEscalatePlanBackfill(sessionId, session.status, plan);
+  const progress = parseProgress(
+    plan && !planRow?.plan ? { completedStepOrders: [] } : planRow?.progress,
+  );
+
+  let shareCardUrl: string | null = null;
+  const pathFromPlan =
+    plan && typeof plan.shareCardPath === "string" ? plan.shareCardPath : null;
+  const pathFromRow =
+    typeof planRow?.share_card_path === "string" ? planRow.share_card_path : null;
+  const sharePath = pathFromPlan || pathFromRow;
+  if (sharePath) {
+    shareCardUrl = await signedUrl(BUCKETS.shareCards, sharePath);
   }
 
   return {
@@ -703,6 +1210,7 @@ export async function getSessionDetail(sessionId: string) {
       concernText: session.concern_text,
       city: session.city,
       status: session.status as AgentStepResponse["status"],
+      ownerKey: session.owner_key ?? null,
       photoPath: session.photo_path,
       photoUrl,
       voicePath: session.voice_path,
@@ -711,6 +1219,68 @@ export async function getSessionDetail(sessionId: string) {
     },
     evidence,
     plan,
+    shareCardUrl,
+    progress,
     lastStep: null,
   };
+}
+
+export async function listOwnerSessions(ownerKey: string) {
+  const rows = (await listSessionsByOwner(ownerKey)) as SessionRow[];
+  const out = [];
+  for (const session of rows) {
+    const planRow = await getActionPlan(session.id);
+    let plan: ActionPlan | null = null;
+    if (planRow?.plan) {
+      try {
+        plan = ActionPlanSchema.parse({
+          ...(planRow.plan as Record<string, unknown>),
+          sessionId: session.id,
+        });
+      } catch {
+        plan = null;
+      }
+    }
+    plan = await ensureEscalatePlanBackfill(session.id, session.status, plan);
+    const progress = parseProgress(
+      plan && !planRow?.plan ? { completedStepOrders: [] } : planRow?.progress,
+    );
+    out.push({
+      id: session.id,
+      city: session.city,
+      concernText: session.concern_text,
+      status: session.status,
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
+      hasPlan: Boolean(plan),
+      progressPct: progressPct(plan, progress),
+      goal: plan?.goal ?? null,
+    });
+  }
+  return out;
+}
+
+export async function setSessionProgress(
+  sessionId: string,
+  completedStepOrders: number[],
+) {
+  const session = await loadSession(sessionId);
+  const planRow = await getActionPlan(sessionId);
+  if (!planRow?.plan) throw new Error("No action plan for this session");
+  const plan = ActionPlanSchema.parse({
+    ...(planRow.plan as Record<string, unknown>),
+    sessionId,
+  });
+  const unique = [...new Set(completedStepOrders)].filter((n) =>
+    plan.steps.some((s) => s.order === n),
+  );
+  const progress = { completedStepOrders: unique };
+  await updatePlanProgress(sessionId, progress);
+  const pct = progressPct(plan, progress);
+  if (session.status === "escalated") {
+    if (pct >= 100) await setStatus(sessionId, "done");
+  } else if (session.status === "active" || session.status === "done" || pct >= 100) {
+    await setStatus(sessionId, pct >= 100 ? "done" : "active");
+  }
+  return getSessionDetail(sessionId);
 }

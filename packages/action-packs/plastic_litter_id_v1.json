@@ -103,6 +103,20 @@
   ],
   "questions": [
     {
+      "id": "q_concern_confirm",
+      "text": "Is this the litter concern you want help with?",
+      "expects": "yes_no",
+      "mapsToEvidence": "concern_confirmed",
+      "sourceIds": ["wb_id_plastic"]
+    },
+    {
+      "id": "q_concern",
+      "text": "In a sentence, what litter concern should we plan for?",
+      "expects": "short_text",
+      "mapsToEvidence": "concern_text",
+      "sourceIds": ["wb_id_plastic"]
+    },
+    {
       "id": "q_city",
       "text": "Which city or neighborhood is this in?",
       "expects": "short_text",
@@ -144,6 +158,13 @@
       "expects": "yes_no",
       "mapsToEvidence": "hazard_seen",
       "sourceIds": ["hk_epd_safety", "nsw_sharps", "nelc_litter", "fda_sharps"]
+    },
+    {
+      "id": "q_plan_match",
+      "text": "Does this action plan match what you see in your photo?",
+      "expects": "yes_no",
+      "mapsToEvidence": "plan_matches_photo",
+      "sourceIds": ["wb_id_plastic"]
     }
   ],
   "actions": [

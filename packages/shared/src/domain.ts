@@ -6,6 +6,7 @@ export const SessionStatusSchema = z.enum([
   "questioning",
   "planning",
   "summarizing",
+  "active",
   "done",
   "escalated",
 ]);

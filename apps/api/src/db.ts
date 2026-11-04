@@ -81,6 +81,7 @@ export async function createSession(input: {
   concern_text: string;
   city: string;
   status: string;
+  owner_key?: string | null;
 }) {
   if (getStoreMode() === "local") {
     return localStore.insertSession(input);
@@ -92,6 +93,19 @@ export async function createSession(input: {
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function listSessionsByOwner(ownerKey: string) {
+  if (getStoreMode() === "local") {
+    return localStore.listSessionsByOwner(ownerKey);
+  }
+  const { data, error } = await client()
+    .from("sessions")
+    .select("*")
+    .eq("owner_key", ownerKey)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 export async function getSession(id: string) {
@@ -163,6 +177,7 @@ export async function saveActionPlan(
       session_id: sessionId,
       plan,
       share_card_path,
+      progress: { completedStepOrders: [] },
     })
     .select("*")
     .single();
@@ -183,6 +198,71 @@ export async function getActionPlan(sessionId: string) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function updatePlanProgress(
+  sessionId: string,
+  progress: { completedStepOrders: number[] },
+) {
+  if (getStoreMode() === "local") {
+    return localStore.updatePlanProgress(sessionId, progress);
+  }
+  const existing = await getActionPlan(sessionId);
+  if (!existing?.id) throw new Error("plan not found");
+  const { data, error } = await client()
+    .from("action_plans")
+    .update({ progress })
+    .eq("id", existing.id)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function deleteEvidenceMatching(
+  sessionId: string,
+  opts: { questionIds?: string[]; kinds?: string[] },
+) {
+  if (getStoreMode() === "local") {
+    localStore.deleteEvidence(sessionId, opts);
+    return;
+  }
+  const sb = client();
+  if (opts.questionIds?.length) {
+    const { error } = await sb
+      .from("evidence_items")
+      .delete()
+      .eq("session_id", sessionId)
+      .in("question_id", opts.questionIds);
+    if (error) throw new Error(error.message);
+  }
+  if (opts.kinds?.length) {
+    const { error } = await sb
+      .from("evidence_items")
+      .delete()
+      .eq("session_id", sessionId)
+      .in("kind", opts.kinds);
+    if (error) throw new Error(error.message);
+  }
+}
+
+export async function deleteEvidenceByIds(ids: string[]) {
+  if (ids.length === 0) return;
+  if (getStoreMode() === "local") {
+    localStore.deleteEvidenceByIds(ids);
+    return;
+  }
+  const { error } = await client().from("evidence_items").delete().in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteActionPlans(sessionId: string) {
+  if (getStoreMode() === "local") {
+    localStore.deletePlans(sessionId);
+    return;
+  }
+  const { error } = await client().from("action_plans").delete().eq("session_id", sessionId);
+  if (error) throw new Error(error.message);
 }
 
 async function uploadStorage(

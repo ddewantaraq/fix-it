@@ -4,12 +4,15 @@ import {
   ActionAcceptBodySchema,
   AnswerBodySchema,
   CreateSessionBodySchema,
+  UpdateProgressBodySchema,
 } from "@iklim-pal/shared";
 import {
   getSessionDetail,
+  listOwnerSessions,
   recordActionAccept,
   recordAnswer,
   runAgentStep,
+  setSessionProgress,
 } from "./agent.js";
 import {
   createSession,
@@ -48,6 +51,7 @@ router.post("/sessions", async (req, res) => {
       concern_text: body.concernText,
       city: body.city,
       status: "collecting",
+      owner_key: body.ownerKey ?? null,
     });
 
     res.status(201).json({
@@ -56,9 +60,31 @@ router.post("/sessions", async (req, res) => {
       concernText: data.concern_text,
       city: data.city,
       status: data.status,
+      ownerKey: data.owner_key ?? null,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get("/sessions", async (req, res) => {
+  try {
+    const ownerKey = String(req.query.ownerKey ?? "").trim();
+    if (!ownerKey) throw new Error("ownerKey query param required");
+    const sessions = await listOwnerSessions(ownerKey);
+    res.json({ sessions });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.patch("/sessions/:id/progress", async (req, res) => {
+  try {
+    const body = UpdateProgressBodySchema.parse(req.body ?? {});
+    const detail = await setSessionProgress(req.params.id, body.completedStepOrders);
+    res.json(detail);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

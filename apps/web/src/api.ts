@@ -1,6 +1,16 @@
-import type { AgentStepResponse, SessionDetail } from "@iklim-pal/shared";
+import type { AgentStepResponse, SessionDetail, SessionSummary } from "@iklim-pal/shared";
 
 const base = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
+
+const OWNER_KEY_STORAGE = "iklim-pal-owner-key";
+
+export function getOwnerKey(): string {
+  const existing = localStorage.getItem(OWNER_KEY_STORAGE);
+  if (existing) return existing;
+  const next = crypto.randomUUID();
+  localStorage.setItem(OWNER_KEY_STORAGE, next);
+  return next;
+}
 
 async function json<T>(res: Response): Promise<T> {
   const body = await res.json();
@@ -10,17 +20,41 @@ async function json<T>(res: Response): Promise<T> {
   return body as T;
 }
 
-export async function createSession(city: string, concernText: string) {
+export async function createSession(opts?: {
+  city?: string;
+  concernText?: string;
+  ownerKey?: string;
+}) {
   const res = await fetch(`${base}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       actionPackId: "plastic_litter_id_v1",
-      city,
-      concernText,
+      city: opts?.city ?? "",
+      concernText: opts?.concernText ?? "",
+      ownerKey: opts?.ownerKey ?? getOwnerKey(),
     }),
   });
   return json<{ id: string }>(res);
+}
+
+export async function listSessions(ownerKey = getOwnerKey()) {
+  const res = await fetch(
+    `${base}/sessions?ownerKey=${encodeURIComponent(ownerKey)}`,
+  );
+  return json<{ sessions: SessionSummary[] }>(res);
+}
+
+export async function updateProgress(
+  sessionId: string,
+  completedStepOrders: number[],
+) {
+  const res = await fetch(`${base}/sessions/${sessionId}/progress`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ completedStepOrders }),
+  });
+  return json<SessionDetail>(res);
 }
 
 export async function uploadPhoto(sessionId: string, file: File) {
