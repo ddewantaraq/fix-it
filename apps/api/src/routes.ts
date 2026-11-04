@@ -13,7 +13,7 @@ import {
   recordAnswer,
   runAgentStep,
   setSessionProgress,
-} from "./agent.js";
+} from "./agent/index.js";
 import {
   createSession,
   getStoreMode,
