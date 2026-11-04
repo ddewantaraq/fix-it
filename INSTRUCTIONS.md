@@ -92,7 +92,7 @@ Expect `"store":"supabase"`.
 ### Hazard path (escalate)
 
 1. Use `fixtures/litter/S4_hazard_escalate/photo.png`.
-2. If the photo or your answers indicate needles, medical waste, oil drums, or unknown chemicals, the app should **escalate**: stop DIY cleanup and tell an adult / local authority.
+2. If the photo or your answers indicate needles, medical waste, oil drums, or unknown chemicals, the app should **escalate**: stop DIY cleanup and finalize a **stop-and-get-help plan** (stay clear → note location → contact adult/authority), visible under **Plans → Past**.
 
 Other fixtures:
 
@@ -129,11 +129,19 @@ npm run e2e:real        # full real-photo agent path (API must be running)
 
 | Symptom | Fix |
 | --- | --- |
-| `/health` shows `store: local` | Apply `001_iklim_pal.sql`; restart API |
-| Photo upload fails | Confirm Storage buckets exist; service role key is correct |
-| Long wait after Start | Normal for ~3–4MB photos + SAM/Spark; wait 1–3 minutes |
-| Meta API errors | Check `MODEL_API_KEY` and Meta billing/credits |
+| `/health` shows `store: local` | Apply `001_iklim_pal.sql` **and** `002_session_owner_progress.sql`; confirm service role can reach tables; restart API |
+| Plans empty / progress fails / status `active` rejected | Migration `002` missing (`owner_key`, `active` in status check, `progress` jsonb) |
+| Photo upload fails | Confirm buckets `session-photos`, `session-masks`, `session-share-cards`, `session-voice` exist; service role key correct |
+| Long wait after Start | Normal for large photos + SAM (and first Spark concern); wait 1–3 minutes |
+| Meta API errors | Check `MODEL_API_KEY` and Meta credits / billing |
 | Blank plan / errors mid-flow | Check API terminal logs; re-run with S2 fixture |
+| Hazard **Yes** / Continue loops with same warning, no plan | Restart API on latest code — escalate should save an authority-contact plan; open **Plans** → Past |
+| Plans card opens but “No action plan on this session yet” | Escalated before plan backfill: refresh Plans (list/detail backfills escalate plan) or re-run hazard path |
+| Status stuck on `summarizing` (no checkboxes in Plans detail) | Finish chat: answer **Yes** on “Does this plan match your photo?” → status becomes `active` |
+| No share card on Plans detail | Muse Image may have failed at finalize (plan still works); happy path in chat may show card if generation succeeded |
+| No **Record** / voice UI | Voice only on concern rewrite: answer **No** on concern confirm → mic appears; allow mic permission |
+| Time question only chips, need custom answer | Use “Or type a different amount” under the chips |
+| CORS / web can’t reach API | `WEB_ORIGIN` and `VITE_API_BASE_URL` must match how you open the app (ports 3001 / 5173) |
 
 ---
 

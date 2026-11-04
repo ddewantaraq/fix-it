@@ -13,7 +13,7 @@ Also see [`architecture.md`](architecture.md), [`task.md`](task.md), [`docs/anti
 | Model | Role |
 | --- | --- |
 | `sam-3.1` | Segment litter in the photo |
-| `muse-spark-1.3` | Concern hypothesis after SAM (not every Q&A turn) |
+| `muse-spark-1.3` | Concern hypothesis after SAM |
 | `muse-wonder-1.0` | Action Plan synthesis |
 | `muse-image-1.0` | Share / invite card |
 | `muse-voice-transcribe-1.0` | Optional spoken concern on `q_concern` |
