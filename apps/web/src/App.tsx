@@ -185,6 +185,52 @@ async function placeLabelFromGeo(): Promise<string> {
   throw new Error("Could not read a city name from that location");
 }
 
+function PhaseIcon({ id }: { id: Phase | "share" }) {
+  const props = {
+    viewBox: "0 0 24 24",
+    width: 14,
+    height: 14,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    focusable: false,
+  };
+  if (id === "capture") {
+    return (
+      <svg {...props}>
+        <path d="M4.5 8.5h3l1.4-2h6.2l1.4 2h3v10h-15v-10z" />
+        <circle cx="12" cy="13.2" r="2.6" />
+      </svg>
+    );
+  }
+  if (id === "guide") {
+    return (
+      <svg {...props}>
+        <path d="M5 6.5h14v8.5H9.2L5 18.2V6.5z" />
+      </svg>
+    );
+  }
+  if (id === "share") {
+    return (
+      <svg {...props}>
+        <circle cx="6.5" cy="12" r="2" />
+        <circle cx="17" cy="7" r="2" />
+        <circle cx="17" cy="17" r="2" />
+        <path d="M8.4 11.1 14.8 8.1M8.4 12.9 14.8 15.9" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <path d="M9 7h10M9 12h10M9 17h10" />
+      <path d="M4.5 7h.01M4.5 12h.01M4.5 17h.01" />
+    </svg>
+  );
+}
+
 function Progress({ phase }: { phase: Phase }) {
   const items: { id: Phase; label: string }[] = [
     { id: "capture", label: "Capture" },
@@ -199,7 +245,10 @@ function Progress({ phase }: { phase: Phase }) {
           key={item.id}
           className={index === active ? "is-current" : index < active ? "is-done" : undefined}
         >
-          <span>{index < active ? "✓" : index + 1}</span>
+          <span className="progress-mark">
+            <PhaseIcon id={item.id} />
+            <span>{index < active ? "✓" : index + 1}</span>
+          </span>
           {item.label}
         </li>
       ))}
@@ -508,8 +557,13 @@ export function App() {
     <>
       <header className="topbar">
         <div className="brand">
-          <span className="mark" aria-hidden="true" />
-          Iklim PAL
+          <img
+            className="brand-logo"
+            src="/icons/01_logo_horizontal_transparent.png"
+            alt="Iklim PAL"
+            width={1256}
+            height={449}
+          />
         </div>
         <div className="topbar-actions">
           <p>Local action planner</p>
@@ -610,16 +664,34 @@ export function App() {
             </p>
             <ul className="points">
               <li>
-                <span>1</span>
-                <div>Add a real litter photo. Optionally share your location for a place hint.</div>
+                <span>
+                  <PhaseIcon id="capture" />
+                  <span className="point-num">1</span>
+                </span>
+                <div>
+                  <p className="point-label">Capture</p>
+                  Add a real litter photo. Optionally share your location for a place hint.
+                </div>
               </li>
               <li>
-                <span>2</span>
-                <div>Confirm what Muse sees, then answer only what the guide still needs.</div>
+                <span>
+                  <PhaseIcon id="guide" />
+                  <span className="point-num">2</span>
+                </span>
+                <div>
+                  <p className="point-label">Guide</p>
+                  Confirm what Muse sees, then answer only what the guide still needs.
+                </div>
               </li>
               <li>
-                <span>3</span>
-                <div>Leave with steps, materials, safety notes, and a way to measure.</div>
+                <span>
+                  <PhaseIcon id="plan" />
+                  <span className="point-num">3</span>
+                </span>
+                <div>
+                  <p className="point-label">Plan</p>
+                  Leave with steps, materials, safety notes, and a way to measure.
+                </div>
               </li>
             </ul>
           </div>
@@ -632,7 +704,13 @@ export function App() {
             }}
           >
             <Progress phase="capture" />
-            <h2>Capture</h2>
+            <div className="phase-head">
+              <p className="eyebrow">Step 1</p>
+              <h2>
+                <PhaseIcon id="capture" />
+                Capture
+              </h2>
+            </div>
             {error && (
               <p className="banner" role="alert">
                 {error}
@@ -643,6 +721,9 @@ export function App() {
                 <img src={photoObjectUrl} alt="Selected litter photo" />
               ) : (
                 <span className="drop-copy">
+                  <span className="drop-icon">
+                    <PhaseIcon id="capture" />
+                  </span>
                   <strong>Choose a litter photo</strong>
                   Drop it here, or click to browse
                 </span>
@@ -730,7 +811,15 @@ export function App() {
                   step.ui.plan ? "thread is-done" : step.escalated ? "thread is-alert" : "thread"
                 }
                 aria-busy={busy}
+                aria-labelledby="guide-heading"
               >
+                <header className="thread-label">
+                  <PhaseIcon id="guide" />
+                  <div>
+                    <p className="eyebrow">Step 2</p>
+                    <h2 id="guide-heading">Guide</h2>
+                  </div>
+                </header>
                 <div className="log" ref={logRef} aria-live="polite">
                   {messages.map((message) => (
                     <div key={message.id} className={`bubble ${message.role}`}>
@@ -1244,9 +1333,14 @@ function PlanSheet({
 
   return (
     <article className={escalated ? "plan-sheet is-alert" : "plan-sheet"}>
-      <p className="kicker">Your plan</p>
+      <div className="phase-head">
+        <p className="kicker">
+          <PhaseIcon id="plan" />
+          Your plan
+        </p>
+        <h2>{plan.goal}</h2>
+      </div>
       <p className="rec">{RECOMMENDATION_LABEL[plan.recommendation] ?? plan.recommendation}</p>
-      <h2>{plan.goal}</h2>
       {onToggleStep && (
         <p className="meta progress-line">Progress {pct}%</p>
       )}
@@ -1321,7 +1415,10 @@ function PlanSheet({
       {shareCardUrl && (
         <figure className="share-card">
           <div className="share-head">
-            <h3>Share card</h3>
+            <h3>
+              <PhaseIcon id="share" />
+              Share card
+            </h3>
             <button className="chip" type="button" onClick={() => void onCopyLink()}>
               {copied ? "Link copied" : "Copy link"}
             </button>
